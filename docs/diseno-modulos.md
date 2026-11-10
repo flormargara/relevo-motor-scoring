@@ -127,7 +127,7 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **El 400 de CENDEU** es un killer propio (`identificacion_rechazada_por_bcra`), así el killer de identificación inválida no consulta ninguna fuente.
 - **BADLAR** se publica con unos días de demora: se consulta una ventana de 30 días y se toma el último valor. Si cae, se usa el último guardado con `desactualizada: true` (queda en la traza).
 - **IGJ** es un snapshot SQLite (`data/igj.sqlite`, no versionado) armado desde el ZIP semestral de datos.jus.gob.ar. Limitaciones: solo sociedades de CABA (otras jurisdicciones → *sin antecedentes*), y no publica la fecha de constitución, así que la antigüedad se aproxima con el primer balance o asamblea registrados (cota inferior; ~74 % de los CUIT no tiene ninguno → *sin dato*).
-- **Cheques rechazados**: no encontramos un CUIT grande con cheques rechazados; el fixture `sintetico_cheques.json` sigue el esquema documentado y hay que reemplazarlo por una respuesta real.
+- **Cheques rechazados**: el fixture es la respuesta real de Celulosa Argentina (`30501062150`, 1652 cheques sin fondos de 2025). Un cheque cuenta como impago si no tiene `fechaPago`. En las respuestas reales `estadoMulta` y `denomJuridica` vienen en `null` y `fechaPagoMulta` viene cargada aunque el cheque siga impago, así que no sirven para decidir si se pagó.
 - **`ConsultorReal`**: precarga en paralelo las fuentes gratuitas que usan las reglas; las pagas se consultan solo cuando el motor las pide. La configuración técnica está en `config/fuentes.yaml`. Los snapshots entre evaluaciones viven detrás del seam `AlmacenSnapshots` (hoy en memoria; en el paso 4, SQLite).
 
 ## Decisiones tomadas al construir el paso 3

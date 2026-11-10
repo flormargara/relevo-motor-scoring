@@ -14,6 +14,7 @@ from relevo.fuentes.cendeu import Cendeu, Cheques
 
 FIXTURES = Path(__file__).parent / "fixtures" / "bcra"
 BNA, YPF, VICENTIN = "30500010912", "30546689979", "30500959629"
+CELULOSA = "30501062150"
 SIN_DATOS = "No se encontró datos para la identificación ingresada."
 NO_404 = {"status": 404, "body": {"status": 404, "errorMessages": [SIN_DATOS]}}
 
@@ -90,9 +91,12 @@ def test_cendeu_400_es_identificacion_rechazada():
 
 
 def test_cheques_cuenta_los_impagos():
-    resultado = Cheques(sin_cliente()).traducir(fixture("sintetico_cheques"))
+    """Celulosa Argentina: 1652 cheques rechazados sin fondos en dos entidades; 4 se pagaron después."""
+    variables = Cheques(sin_cliente()).traducir(fixture(f"{CELULOSA}_chequesrechazados")).variables
 
-    assert resultado == Disponible({"rechazados_total": 3, "rechazados_impagos": 2, "monto_impago": 1_750_000.0})
+    assert variables["rechazados_total"] == 1652
+    assert variables["rechazados_impagos"] == 1648
+    assert variables["monto_impago"] == pytest.approx(26_845_062_084.82)
 
 
 def test_cheques_404_es_sin_antecedentes():
