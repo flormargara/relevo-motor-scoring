@@ -10,7 +10,7 @@ El alcance acordado está en [docs/acuerdos-demo-v1.md](docs/acuerdos-demo-v1.md
 
 ## Estructura
 
-- `src/relevo/`: el código. `motor.evaluar` es la entrada del motor (ver [docs/diseno-modulos.md](docs/diseno-modulos.md)).
+- `src/relevo/`: el código. `motor.evaluar` es la entrada del motor (ver [docs/diseno-modulos.md](docs/diseno-modulos.md)). El flujo del motor y sus inputs están en [docs/motor-flujo.md](docs/motor-flujo.md) y el esquema de la base en [docs/der.md](docs/der.md).
 - `rules/`: reglas versionadas por segmento (`pyme.v1.yaml`, `monotributista.v1.yaml`).
 - `config/`: configuración técnica de las fuentes (`fuentes.yaml`) y datos de las fuentes de juguete (`juguete.yaml`).
 - `modelos/`: puntos del scorecard por segmento (provisionales hasta entrenar con la cartera sintética).
