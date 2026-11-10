@@ -3,7 +3,7 @@ name = "relevo"
 version = "0.1.0"
 description = "Motor de decisión de riesgo crediticio para PyMEs y monotributistas"
 requires-python = ">=3.12"
-dependencies = ["pyyaml>=6", "httpx>=0.27"]
+dependencies = ["pyyaml>=6", "httpx>=0.27", "fastapi>=0.115", "jinja2>=3.1", "uvicorn>=0.30", "python-multipart>=0.0.9"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
@@ -16,9 +16,13 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+relevo = ["plantillas/*.html"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
 
 [tool.ruff]
 line-length = 120

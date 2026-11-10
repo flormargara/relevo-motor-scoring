@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set seccion = "bandeja" %}
+{% block titulo %}Bandeja{% endblock %}
+{% block contenido %}
+<h1>Bandeja</h1>
+<p class="sub">Solicitudes de crédito de capital de trabajo. Cada evaluación consulta las fuentes en vivo.</p>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<section class="tarjeta">
+  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 8px;">
+    <h2 style="margin: 0;">Solicitudes</h2>
+    {% if filas | selectattr("veredicto", "none") | list %}
+    <form class="inline" method="post" action="/evaluar-pendientes"><button>Evaluar pendientes</button></form>
+    {% endif %}
+  </div>
+  {% if filas %}
+  <table>
+    <thead><tr>
+      <th>Solicitante</th><th>Segmento</th><th class="num">Monto</th><th class="num">Plazo</th>
+      <th>Veredicto</th><th>Rating</th><th>Evaluada</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for fila in filas %}
+      {% set s = fila.solicitud %}
+      <tr>
+        <td><a href="/solicitudes/{{ s.id }}">{{ fila.denominacion or s.solicitud.cuit }}</a>
+          <div class="suave"><code>{{ s.solicitud.cuit }}</code>{% if s.origen == "precargado" %} · precargado{% endif %}</div></td>
+        <td>{{ "PyME" if s.solicitud.segmento == "pyme" else "Monotributista" }}</td>
+        <td class="num">{{ s.solicitud.monto | pesos }}</td>
+        <td class="num">{{ s.solicitud.plazo_meses }} m</td>
+        <td>{% if fila.veredicto %}<span class="chip {{ fila.veredicto.value }}">{{ fila.veredicto.value }}</span>{% else %}<span class="chip">sin evaluar</span>{% endif %}</td>
+        <td>{{ fila.rating or "—" }}</td>
+        <td class="suave">{{ fila.evaluada_en | fecha }}</td>
+        <td>
+          <form class="inline" method="post" action="/solicitudes/{{ s.id }}/evaluar"><button>{{ "Reevaluar" if fila.veredicto else "Evaluar" }}</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="suave">No hay solicitudes. Cargá una abajo.</p>
+  {% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>Nueva solicitud</h2>
+  <form method="post" action="/solicitudes" id="alta">
+    <div class="grilla">
+      <div><label for="cuit">CUIT / CUIL</label><input id="cuit" name="cuit" required placeholder="30-12345678-9" value="{{ formulario.cuit or '' }}"></div>
+      <div><label for="segmento">Segmento</label>
+        <select id="segmento" name="segmento">
+          <option value="pyme" {{ "selected" if formulario.segmento == "pyme" }}>PyME</option>
+          <option value="monotributista" {{ "selected" if formulario.segmento == "monotributista" }}>Monotributista</option>
+        </select></div>
+      <div><label for="monto">Monto solicitado ($)</label><input id="monto" name="monto" type="number" min="1" step="1" required value="{{ formulario.monto or '' }}"></div>
+      <div><label for="plazo">Plazo (meses)</label><input id="plazo" name="plazo_meses" type="number" min="1" max="120" required value="{{ formulario.plazo_meses or 12 }}"></div>
+    </div>
+    <p class="suave" style="margin: 16px 0 8px;">Campos de los documentos. En el paso 5 los va a extraer el agente documental; por ahora se cargan a mano.</p>
+    <div class="grilla">
+      <div data-segmento="pyme"><label for="ventas">Ventas anuales del balance ($)</label><input id="ventas" name="ventas_anuales" type="number" min="0" step="1"></div>
+      <div data-segmento="monotributista"><label for="categoria">Categoría de monotributo</label>
+        <select id="categoria" name="categoria_monotributo"><option value="">—</option>{% for c in "ABCDEFGHIJK" %}<option>{{ c }}</option>{% endfor %}</select></div>
+      <div data-segmento="monotributista"><label for="antiguedad">Antigüedad de la actividad (años)</label><input id="antiguedad" name="antiguedad_actividad_anios" type="number" min="0" step="0.1"></div>
+    </div>
+    <label style="display: flex; gap: 8px; align-items: center; margin-top: 16px; color: var(--texto);">
+      <input type="checkbox" name="consentimiento" value="true" style="width: auto;">
+      Si es una persona humana, tengo su consentimiento para consultar sus datos (Ley 25.326).
+    </label>
+    <div style="margin-top: 16px;"><button class="primario">Cargar y evaluar</button></div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const segmento = document.getElementById("segmento");
+  function mostrarCampos() {
+    document.querySelectorAll("[data-segmento]").forEach((campo) => {
+      campo.hidden = campo.dataset.segmento !== segmento.value;
+    });
+  }
+  segmento.addEventListener("change", mostrarCampos);
+  mostrarCampos();
+</script>
+{% endblock %}

@@ -138,3 +138,12 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **Versionado**: el modelo entrenado es `v2` (`rules/<segmento>.v2.yaml` → `modelos/<segmento>.v2.json`) y la `v1` provisional queda para reproducir evaluaciones viejas. Los tests del motor usan la `v1` a propósito, porque prueban el motor y no un modelo. Un test verifica que los JSON versionados se regeneran idénticos con su semilla.
 - **Métricas en validación** (30 %, guardadas en el JSON): PyME AUC 0,74 / KS 0,37; monotributistas AUC 0,73 / KS 0,35. El default observado por rating coincide con la PD media y crece de A a E.
 - **Es una cartera sintética**: los puntos sirven para la demo, no para decidir créditos reales.
+
+## Decisiones tomadas al construir el paso 4
+
+- **`repositorio`**: SQLite con solicitudes, evaluaciones (traza, motivos, oferta, versión de reglas), snapshots (crudo + resultado traducido + origen e intentos), informes, chat y resoluciones. Borrar una solicitud borra todo en cascada. Una evaluación guardada se reconstruye idéntica y se puede **reproducir**: misma solicitud + mismas reglas + sus snapshots → mismo veredicto y misma traza (hay un test).
+- **`AlmacenSqlite`** implementa `AlmacenSnapshots` sobre la tabla de snapshots: el bureau se reutiliza entre evaluaciones de la misma solicitud y BADLAR cae al último valor real de cualquier evaluación. Nunca reutiliza un valor que ya era de respaldo.
+- **`servicio`** concentra los casos de uso (alta, evaluar, precargados), así la app queda delgada. El alta de un CUIL de persona humana **exige consentimiento** (Ley 25.326). Un CUIT mal formado se acepta y lo rechaza el motor, para que quede en la traza.
+- **Casos precargados**: `config/casos_precargados.yaml` (empresas, versionado) + `data/casos_precargados.local.yaml` (personas, fuera de git). Se dan de alta al arrancar pero no se evalúan solos, porque evaluar consulta en vivo.
+- **App**: FastAPI + Jinja, formularios con POST-redirect-GET y casi nada de JS. La resolución del analista solo se registra sobre la última evaluación y solo si fue `DERIVAR`; se muestra aparte y nunca reemplaza el veredicto.
+- **Documentos**: hasta el paso 5 los campos se cargan a mano en el alta (con `confianza_minima: 1`).

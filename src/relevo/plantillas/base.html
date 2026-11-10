@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Relevo{% endblock %} · Relevo AI</title>
+<style>
+  :root {
+    --fondo: #f6f7f9; --superficie: #fff; --borde: #e3e6ea; --texto: #1d2430; --suave: #5f6b7a;
+    --acento: #2453c7; --verde: #1f7a4d; --verde-f: #e6f4ec; --ambar: #9a6200; --ambar-f: #fdf3df;
+    --rojo: #b42318; --rojo-f: #fdecea; --gris-f: #eef0f3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fondo); color: var(--texto); }
+  header.barra { background: var(--superficie); border-bottom: 1px solid var(--borde); }
+  header.barra .contenido { display: flex; gap: 24px; align-items: center; padding-block: 12px; }
+  header.barra a { color: var(--suave); text-decoration: none; font-weight: 500; }
+  header.barra a.activo, header.barra a:hover { color: var(--texto); }
+  .marca { font-weight: 700; color: var(--texto) !important; margin-right: 8px; }
+  .contenido { max-width: 1180px; margin: 0 auto; padding-inline: 16px; }
+  main.contenido { padding-block: 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 0 0 12px; }
+  .sub { color: var(--suave); margin: 0 0 20px; }
+  .tarjeta { background: var(--superficie); border: 1px solid var(--borde); border-radius: 10px; padding: 18px; margin-bottom: 18px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--suave); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  a { color: var(--acento); }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--gris-f); color: var(--suave); white-space: nowrap; }
+  .APROBADO, .ok, .disponible, .no-salta { background: var(--verde-f); color: var(--verde); }
+  .DERIVAR, .sin-dato, .sin-antecedentes, .deriva, .no-evaluable { background: var(--ambar-f); color: var(--ambar); }
+  .RECHAZADO, .salta, .rechaza, .no-disponible, .no-calculable, .debajo-del-minimo { background: var(--rojo-f); color: var(--rojo); }
+  button, .boton { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--borde); background: var(--superficie); color: var(--texto); cursor: pointer; text-decoration: none; display: inline-block; }
+  button.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+  button.peligro { color: var(--rojo); }
+  button:hover { filter: brightness(.96); }
+  form.inline { display: inline; }
+  label { display: block; font-size: 13px; color: var(--suave); margin-bottom: 4px; }
+  input, select, textarea { font: inherit; width: 100%; padding: 7px 9px; border: 1px solid var(--borde); border-radius: 7px; background: var(--superficie); color: var(--texto); }
+  .grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .error { background: var(--rojo-f); color: var(--rojo); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .aviso { background: var(--ambar-f); color: var(--ambar); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .suave { color: var(--suave); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  pre { background: var(--gris-f); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0 0; }
+  details summary { cursor: pointer; color: var(--acento); }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  .kv dt { color: var(--suave); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header class="barra"><div class="contenido">
+  <a class="marca" href="/">Relevo AI</a>
+  <a href="/" class="{{ 'activo' if seccion == 'bandeja' }}">Bandeja</a>
+  <a href="/reglas" class="{{ 'activo' if seccion == 'reglas' }}">Reglas</a>
+</div></header>
+<main class="contenido">
+{% block contenido %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

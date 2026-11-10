@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% set seccion = "bandeja" %}
+{% set s = guardada.solicitud %}
+{% block titulo %}{{ (actual and actual.denominacion) or s.cuit }}{% endblock %}
+
+{% macro detalle(d) -%}
+  {%- set partes = [] -%}
+  {%- for clave, valor in d.items() if clave not in ("valores", "motivos", "fuentes_no_consultadas", "modelo", "provisional") and valor is not none -%}
+    {%- if clave == "puntos" %}{% set _ = partes.append((valor | numero) ~ " puntos") %}
+    {%- elif clave == "pd" %}{% set _ = partes.append("PD " ~ (valor | porcentaje)) %}
+    {%- elif clave in ("monto", "cuota", "cuota_maxima", "monto_maximo") %}{% set _ = partes.append((clave | replace("_", " ")) ~ " " ~ (valor | pesos)) %}
+    {%- elif clave in ("tasa_base", "spread", "tna") %}{% set _ = partes.append((clave | replace("_", " ")) ~ " " ~ (valor | numero) ~ " %") %}
+    {%- elif clave == "plazo" %}{% set _ = partes.append("plazo " ~ valor ~ " meses") %}
+    {%- else %}{% set _ = partes.append((clave | replace("_", " ")) ~ ": " ~ (valor | numero)) %}{% endif -%}
+  {%- endfor -%}
+  {{ partes | join(" · ") }}
+  {%- if d.valores %}<div>{% for k, v in d.valores.items() %}<code>{{ k }} = {{ v | numero }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif -%}
+{%- endmacro %}
+
+{% block contenido %}
+<p class="suave" style="margin: 0 0 4px;"><a href="/">← Bandeja</a></p>
+<div class="acciones" style="justify-content: space-between; align-items: flex-start;">
+  <div>
+    <h1>{{ (actual and actual.denominacion) or s.cuit }}</h1>
+    <p class="sub"><code>{{ s.cuit }}</code> · {{ "PyME" if s.segmento == "pyme" else "Monotributista" }}
+      · pide {{ s.monto | pesos }} a {{ s.plazo_meses }} meses
+      {% if guardada.origen == "precargado" %} · precargado{% endif %}</p>
+  </div>
+  <div class="acciones">
+    <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/evaluar"><button class="primario">{{ "Reevaluar" if actual else "Evaluar" }}</button></form>
+    <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/borrar" onsubmit="return confirm('¿Borrar la solicitud y todas sus evaluaciones?')"><button class="peligro">Borrar</button></form>
+  </div>
+</div>
+
+{% if not actual %}
+<section class="tarjeta"><p class="suave">Todavía no se evaluó. La evaluación consulta las fuentes en vivo.</p></section>
+{% else %}
+{% set e = actual.evaluacion %}
+{% if not es_ultima %}<div class="aviso">Estás viendo una evaluación anterior. <a href="/solicitudes/{{ guardada.id }}">Ver la última</a>.</div>{% endif %}
+
+<section class="tarjeta">
+  <div class="acciones" style="align-items: center; margin-bottom: 12px;">
+    <span class="chip {{ e.veredicto.value }}" style="font-size: 15px; padding: 4px 14px;">{{ e.veredicto.value }}</span>
+    <span class="suave">{{ actual.creada_en | fecha }} · reglas <code>{{ e.version_reglas }}</code></span>
+  </div>
+  {% if e.motivos %}
+  <ul style="margin: 0 0 12px; padding-left: 20px;">{% for m in e.motivos %}<li>{{ m }}</li>{% endfor %}</ul>
+  {% endif %}
+  <div class="grilla">
+    <dl class="kv">
+      <dt>Rating</dt><dd>{{ e.rating or "—" }}</dd>
+      <dt>PD</dt><dd>{{ e.pd | porcentaje }}</dd>
+      <dt>Puntos</dt><dd>{{ e.puntos | numero }}</dd>
+    </dl>
+    {% if e.oferta %}
+    <dl class="kv">
+      <dt>{{ "Oferta propuesta" if e.veredicto.value == "DERIVAR" else "Oferta" }}</dt><dd>{{ e.oferta.monto | pesos }}</dd>
+      <dt>Plazo</dt><dd>{{ e.oferta.plazo_meses }} meses</dd>
+      <dt>Tasa (TNA)</dt><dd>{{ e.oferta.tasa_nominal_anual | numero }} %</dd>
+      <dt>Cuota</dt><dd>{{ e.oferta.cuota | pesos(2) }}</dd>
+    </dl>
+    {% endif %}
+  </div>
+</section>
+
+{% if e.veredicto.value == "DERIVAR" and es_ultima %}
+<section class="tarjeta">
+  <h2>Resolución del analista</h2>
+  {% if resolucion %}
+    <p><span class="chip {{ 'APROBADO' if resolucion.decision == 'aprobar' else 'RECHAZADO' }}">{{ resolucion.decision }}</span>
+      por {{ resolucion.analista }} el {{ resolucion.creada_en | fecha }}</p>
+    <p>{{ resolucion.motivo }}</p>
+    <p class="suave">La resolución se registra aparte: no reemplaza el veredicto del motor.</p>
+  {% else %}
+  <form method="post" action="/solicitudes/{{ guardada.id }}/resolucion">
+    <input type="hidden" name="evaluacion_id" value="{{ actual.id }}">
+    <div class="grilla">
+      <div><label for="decision">Decisión</label><select id="decision" name="decision"><option value="aprobar">Aprobar</option><option value="rechazar">Rechazar</option></select></div>
+      <div><label for="analista">Analista</label><input id="analista" name="analista" required></div>
+    </div>
+    <div style="margin-top: 12px;"><label for="motivo">Motivo</label><textarea id="motivo" name="motivo" rows="2" required></textarea></div>
+    <div style="margin-top: 12px;"><button class="primario">Registrar resolución</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="tarjeta">
+  <h2>Informe de riesgo</h2>
+  {% if informe %}<div style="white-space: pre-wrap;">{{ informe }}</div>
+  {% else %}<p class="suave">El agente de informe se agrega en el paso 5. El veredicto no depende de él.</p>{% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>Traza</h2>
+  <table>
+    <thead><tr><th>Etapa</th><th>Regla</th><th>Resultado</th><th>Detalle</th></tr></thead>
+    <tbody>
+    {% for paso in e.traza %}
+      <tr>
+        <td class="suave">{{ paso.etapa }}</td>
+        <td><code>{{ paso.regla }}</code></td>
+        <td><span class="chip {{ paso.resultado | replace(' ', '-') }}">{{ paso.resultado }}</span></td>
+        <td>{{ detalle(paso.detalle) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if e.fuentes_no_consultadas %}
+  <p class="suave" style="margin-bottom: 0;">No se consultaron (la evaluación ya estaba decidida): {{ e.fuentes_no_consultadas | join(", ") }}.</p>
+  {% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>Fuentes</h2>
+  <table>
+    <thead><tr><th>Fuente</th><th>Resultado</th><th>Consultada</th><th>Origen</th><th>Variables</th></tr></thead>
+    <tbody>
+    {% for snap in e.snapshots %}
+      {% set tipo = snap.resultado | tipo_resultado %}
+      <tr>
+        <td><code>{{ snap.fuente }}</code></td>
+        <td><span class="chip {{ tipo | replace(' ', '-') }}">{{ tipo }}</span>
+          {% if snap.resultado.motivo is defined %}<div class="suave">{{ snap.resultado.motivo }}</div>{% endif %}</td>
+        <td class="suave">{{ snap.consultado_en | fecha }}{% if snap.intentos > 1 %}<div>{{ snap.intentos }} intentos</div>{% endif %}</td>
+        <td class="suave">{{ snap.origen | replace("_", " ") }}{% if snap.nota %}<div>{{ snap.nota }}</div>{% endif %}</td>
+        <td>
+          {% if snap.resultado.variables is defined %}
+            {% for k, v in snap.resultado.variables.items() %}<div><code>{{ k }}</code> {{ v | numero }}</div>{% endfor %}
+          {% endif %}
+          {% if snap.crudo is not none %}<details><summary>respuesta cruda</summary><pre>{{ snap.crudo | a_json }}</pre></details>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="tarjeta">
+  <h2>Documentos</h2>
+  {% if guardada.documentos %}
+  <dl class="kv">{% for k, v in guardada.documentos.items() %}<dt>{{ k | replace("_", " ") }}</dt><dd>{{ v | numero }}</dd>{% endfor %}</dl>
+  {% else %}<p class="suave">Sin documentos cargados.</p>{% endif %}
+</section>
+
+{% if historial | length > 1 %}
+<section class="tarjeta">
+  <h2>Evaluaciones</h2>
+  <table>
+    <thead><tr><th>Fecha</th><th>Reglas</th><th>Veredicto</th><th>Rating</th></tr></thead>
+    <tbody>
+    {% for h in historial %}
+      <tr>
+        <td><a href="/solicitudes/{{ guardada.id }}?evaluacion={{ h.id }}">{{ h.creada_en | fecha }}</a>{% if h.id == actual.id %} <span class="suave">(viendo)</span>{% endif %}</td>
+        <td><code>{{ h.evaluacion.version_reglas }}</code></td>
+        <td><span class="chip {{ h.evaluacion.veredicto.value }}">{{ h.evaluacion.veredicto.value }}</span></td>
+        <td>{{ h.evaluacion.rating or "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

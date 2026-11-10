@@ -1,0 +1,432 @@
+"""Persistencia local en SQLite.
+
+Guarda solicitudes y evaluaciones completas (snapshots, traza, versión de reglas y
+veredicto), más informes, chat y resoluciones del analista. Una evaluación es
+inmutable: reevaluar agrega una nueva, y vale la última.
+
+También implementa ``AlmacenSnapshots`` para el ``ConsultorReal``: los snapshots se
+persisten junto con su evaluación, y ``ultimo`` los busca ahí.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+import uuid
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from relevo.consultor import Disponible, NoDisponible, ResultadoFuente, SinAntecedentes, Snapshot
+from relevo.dominio import Evaluacion, Oferta, Paso, Solicitud, Veredicto
+
+ESQUEMA = """
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS solicitudes (
+    id TEXT PRIMARY KEY,
+    cuit TEXT NOT NULL,
+    segmento TEXT NOT NULL,
+    monto REAL NOT NULL,
+    plazo_meses INTEGER NOT NULL,
+    documentos TEXT,             -- JSON con los campos extraídos, o NULL
+    origen TEXT NOT NULL,        -- precargado | manual
+    consentimiento INTEGER NOT NULL DEFAULT 0,
+    creada_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evaluaciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    solicitud_id TEXT NOT NULL REFERENCES solicitudes(id) ON DELETE CASCADE,
+    creada_en TEXT NOT NULL,
+    version_reglas TEXT NOT NULL,
+    veredicto TEXT NOT NULL,
+    motivos TEXT NOT NULL,
+    puntos REAL,
+    pd REAL,
+    rating TEXT,
+    oferta TEXT,
+    traza TEXT NOT NULL,
+    fuentes_no_consultadas TEXT NOT NULL,
+    denominacion TEXT
+);
+
+CREATE TABLE IF NOT EXISTS snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evaluacion_id INTEGER NOT NULL REFERENCES evaluaciones(id) ON DELETE CASCADE,
+    solicitud_id TEXT NOT NULL,
+    orden INTEGER NOT NULL,
+    fuente TEXT NOT NULL,
+    consultado_en TEXT NOT NULL,
+    crudo TEXT,
+    resultado TEXT NOT NULL,
+    tipo_resultado TEXT NOT NULL,
+    origen TEXT NOT NULL,
+    intentos INTEGER NOT NULL,
+    nota TEXT
+);
+CREATE INDEX IF NOT EXISTS snapshots_por_fuente ON snapshots (fuente, solicitud_id, consultado_en);
+
+CREATE TABLE IF NOT EXISTS informes (
+    evaluacion_id INTEGER PRIMARY KEY REFERENCES evaluaciones(id) ON DELETE CASCADE,
+    texto TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chat (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evaluacion_id INTEGER NOT NULL REFERENCES evaluaciones(id) ON DELETE CASCADE,
+    rol TEXT NOT NULL,           -- analista | agente
+    texto TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS resoluciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evaluacion_id INTEGER NOT NULL REFERENCES evaluaciones(id) ON DELETE CASCADE,
+    decision TEXT NOT NULL,      -- aprobar | rechazar
+    motivo TEXT NOT NULL,
+    analista TEXT NOT NULL,
+    creada_en TEXT NOT NULL
+);
+"""
+
+
+@dataclass(frozen=True)
+class SolicitudGuardada:
+    id: str
+    solicitud: Solicitud
+    documentos: dict[str, Any] | None
+    origen: str
+    consentimiento: bool
+    creada_en: datetime
+
+
+@dataclass(frozen=True)
+class EvaluacionGuardada:
+    id: int
+    solicitud_id: str
+    creada_en: datetime
+    evaluacion: Evaluacion
+    denominacion: str | None
+
+
+@dataclass(frozen=True)
+class FilaBandeja:
+    solicitud: SolicitudGuardada
+    evaluacion_id: int | None
+    veredicto: Veredicto | None
+    rating: str | None
+    evaluada_en: datetime | None
+    denominacion: str | None
+
+
+@dataclass(frozen=True)
+class Resolucion:
+    decision: str
+    motivo: str
+    analista: str
+    creada_en: datetime
+
+
+@dataclass(frozen=True)
+class Mensaje:
+    rol: str
+    texto: str
+    creado_en: datetime
+
+
+class SolicitudInexistente(LookupError):
+    pass
+
+
+class Repositorio:
+    def __init__(self, ruta: Path | str = ":memory:"):
+        if ruta != ":memory:":
+            Path(ruta).parent.mkdir(parents=True, exist_ok=True)
+        self._conexion = sqlite3.connect(str(ruta), check_same_thread=False)
+        self._conexion.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        with self._lock:
+            self._conexion.executescript(ESQUEMA)
+
+    def _ejecutar(self, sql: str, parametros: Any = ()) -> sqlite3.Cursor:
+        with self._lock, self._conexion:
+            return self._conexion.execute(sql, parametros)
+
+    # --- solicitudes ------------------------------------------------------
+
+    def crear_solicitud(
+        self,
+        solicitud: Solicitud,
+        documentos: dict[str, Any] | None = None,
+        origen: str = "manual",
+        consentimiento: bool = False,
+        id: str | None = None,
+        ahora: datetime | None = None,
+    ) -> str:
+        id = id or uuid.uuid4().hex[:12]
+        self._ejecutar(
+            "INSERT INTO solicitudes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                id,
+                solicitud.cuit,
+                solicitud.segmento,
+                solicitud.monto,
+                solicitud.plazo_meses,
+                _json(documentos) if documentos else None,
+                origen,
+                int(consentimiento),
+                (ahora or datetime.now()).isoformat(),
+            ),
+        )
+        return id
+
+    def existe_solicitud(self, id: str) -> bool:
+        return self._ejecutar("SELECT 1 FROM solicitudes WHERE id = ?", (id,)).fetchone() is not None
+
+    def solicitud(self, id: str) -> SolicitudGuardada:
+        fila = self._ejecutar("SELECT * FROM solicitudes WHERE id = ?", (id,)).fetchone()
+        if fila is None:
+            raise SolicitudInexistente(id)
+        return _solicitud(fila)
+
+    def borrar_solicitud(self, id: str) -> None:
+        """Borra la solicitud y todo lo asociado (evaluaciones, snapshots, informes, chat)."""
+        self._ejecutar("DELETE FROM solicitudes WHERE id = ?", (id,))
+
+    def bandeja(self) -> list[FilaBandeja]:
+        filas = self._ejecutar(
+            """
+            SELECT s.*, e.id AS evaluacion_id, e.veredicto, e.rating, e.creada_en AS evaluada_en, e.denominacion
+            FROM solicitudes s
+            LEFT JOIN evaluaciones e ON e.id = (SELECT MAX(id) FROM evaluaciones WHERE solicitud_id = s.id)
+            ORDER BY s.creada_en DESC, s.id
+            """
+        ).fetchall()
+        return [
+            FilaBandeja(
+                solicitud=_solicitud(f),
+                evaluacion_id=f["evaluacion_id"],
+                veredicto=Veredicto(f["veredicto"]) if f["veredicto"] else None,
+                rating=f["rating"],
+                evaluada_en=datetime.fromisoformat(f["evaluada_en"]) if f["evaluada_en"] else None,
+                denominacion=f["denominacion"],
+            )
+            for f in filas
+        ]
+
+    # --- evaluaciones -----------------------------------------------------
+
+    def guardar_evaluacion(self, solicitud_id: str, evaluacion: Evaluacion, ahora: datetime | None = None) -> int:
+        with self._lock, self._conexion:
+            cursor = self._conexion.execute(
+                "INSERT INTO evaluaciones (solicitud_id, creada_en, version_reglas, veredicto, motivos, puntos, pd, "
+                "rating, oferta, traza, fuentes_no_consultadas, denominacion) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    solicitud_id,
+                    (ahora or datetime.now()).isoformat(),
+                    evaluacion.version_reglas,
+                    evaluacion.veredicto.value,
+                    _json(list(evaluacion.motivos)),
+                    evaluacion.puntos,
+                    evaluacion.pd,
+                    evaluacion.rating,
+                    _json(asdict(evaluacion.oferta)) if evaluacion.oferta else None,
+                    _json([asdict(paso) for paso in evaluacion.traza]),
+                    _json(list(evaluacion.fuentes_no_consultadas)),
+                    _denominacion(evaluacion.snapshots),
+                ),
+            )
+            evaluacion_id = cursor.lastrowid
+            self._conexion.executemany(
+                "INSERT INTO snapshots (evaluacion_id, solicitud_id, orden, fuente, consultado_en, crudo, resultado, "
+                "tipo_resultado, origen, intentos, nota) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        evaluacion_id,
+                        solicitud_id,
+                        orden,
+                        s.fuente,
+                        s.consultado_en.isoformat(),
+                        _json(s.crudo),
+                        _json(_resultado_a_dict(s.resultado)),
+                        _tipo(s.resultado),
+                        s.origen,
+                        s.intentos,
+                        s.nota,
+                    )
+                    for orden, s in enumerate(evaluacion.snapshots)
+                ],
+            )
+        assert evaluacion_id is not None
+        return evaluacion_id
+
+    def evaluacion(self, evaluacion_id: int) -> EvaluacionGuardada:
+        fila = self._ejecutar("SELECT * FROM evaluaciones WHERE id = ?", (evaluacion_id,)).fetchone()
+        if fila is None:
+            raise LookupError(f"no existe la evaluación {evaluacion_id}")
+        snapshots = self._ejecutar(
+            "SELECT * FROM snapshots WHERE evaluacion_id = ? ORDER BY orden", (evaluacion_id,)
+        ).fetchall()
+        oferta = json.loads(fila["oferta"]) if fila["oferta"] else None
+        evaluacion = Evaluacion(
+            solicitud=self.solicitud(fila["solicitud_id"]).solicitud,
+            version_reglas=fila["version_reglas"],
+            veredicto=Veredicto(fila["veredicto"]),
+            motivos=tuple(json.loads(fila["motivos"])),
+            traza=tuple(Paso(**paso) for paso in json.loads(fila["traza"])),
+            snapshots=tuple(_snapshot(s) for s in snapshots),
+            fuentes_no_consultadas=tuple(json.loads(fila["fuentes_no_consultadas"])),
+            puntos=fila["puntos"],
+            pd=fila["pd"],
+            rating=fila["rating"],
+            oferta=Oferta(**oferta) if oferta else None,
+        )
+        return EvaluacionGuardada(
+            id=fila["id"],
+            solicitud_id=fila["solicitud_id"],
+            creada_en=datetime.fromisoformat(fila["creada_en"]),
+            evaluacion=evaluacion,
+            denominacion=fila["denominacion"],
+        )
+
+    def evaluaciones(self, solicitud_id: str) -> list[EvaluacionGuardada]:
+        """Todas las evaluaciones de una solicitud, de la más nueva a la más vieja."""
+        ids = self._ejecutar(
+            "SELECT id FROM evaluaciones WHERE solicitud_id = ? ORDER BY id DESC", (solicitud_id,)
+        ).fetchall()
+        return [self.evaluacion(f["id"]) for f in ids]
+
+    def ultima_evaluacion(self, solicitud_id: str) -> EvaluacionGuardada | None:
+        sql = "SELECT MAX(id) AS id FROM evaluaciones WHERE solicitud_id = ?"
+        fila = self._ejecutar(sql, (solicitud_id,)).fetchone()
+        return self.evaluacion(fila["id"]) if fila["id"] is not None else None
+
+    # --- informe, chat y resolución (los usan los agentes y el analista) ---
+
+    def guardar_informe(self, evaluacion_id: int, texto: str) -> None:
+        self._ejecutar(
+            "INSERT OR REPLACE INTO informes VALUES (?, ?, ?)", (evaluacion_id, texto, datetime.now().isoformat())
+        )
+
+    def informe(self, evaluacion_id: int) -> str | None:
+        fila = self._ejecutar("SELECT texto FROM informes WHERE evaluacion_id = ?", (evaluacion_id,)).fetchone()
+        return fila["texto"] if fila else None
+
+    def agregar_mensaje(self, evaluacion_id: int, rol: str, texto: str) -> None:
+        self._ejecutar(
+            "INSERT INTO chat (evaluacion_id, rol, texto, creado_en) VALUES (?, ?, ?, ?)",
+            (evaluacion_id, rol, texto, datetime.now().isoformat()),
+        )
+
+    def chat(self, evaluacion_id: int) -> list[Mensaje]:
+        filas = self._ejecutar("SELECT * FROM chat WHERE evaluacion_id = ? ORDER BY id", (evaluacion_id,)).fetchall()
+        return [Mensaje(f["rol"], f["texto"], datetime.fromisoformat(f["creado_en"])) for f in filas]
+
+    def guardar_resolucion(self, evaluacion_id: int, decision: str, motivo: str, analista: str) -> None:
+        if decision not in ("aprobar", "rechazar"):
+            raise ValueError(f"decisión inválida: {decision!r}")
+        self._ejecutar(
+            "INSERT INTO resoluciones (evaluacion_id, decision, motivo, analista, creada_en) VALUES (?, ?, ?, ?, ?)",
+            (evaluacion_id, decision, motivo, analista, datetime.now().isoformat()),
+        )
+
+    def resolucion(self, evaluacion_id: int) -> Resolucion | None:
+        fila = self._ejecutar(
+            "SELECT * FROM resoluciones WHERE evaluacion_id = ? ORDER BY id DESC LIMIT 1", (evaluacion_id,)
+        ).fetchone()
+        if fila is None:
+            return None
+        return Resolucion(fila["decision"], fila["motivo"], fila["analista"], datetime.fromisoformat(fila["creada_en"]))
+
+
+class AlmacenSqlite:
+    """``AlmacenSnapshots`` sobre el repositorio.
+
+    Los snapshots se persisten con su evaluación (``guardar_evaluacion``), así que
+    ``guardar`` no hace nada. ``ultimo`` devuelve el snapshot más reciente que vino de
+    una consulta real con respuesta: de la misma solicitud, o de cualquiera si la clave
+    es global (``*``)."""
+
+    def __init__(self, repositorio: Repositorio):
+        self.repositorio = repositorio
+
+    def guardar(self, clave: str, snapshot: Snapshot) -> None:
+        pass
+
+    def ultimo(self, fuente: str, clave: str) -> Snapshot | None:
+        filtro, parametros = ("", (fuente,)) if clave == "*" else (" AND solicitud_id = ?", (fuente, clave))
+        fila = self.repositorio._ejecutar(
+            "SELECT * FROM snapshots WHERE fuente = ? AND tipo_resultado != 'no_disponible' "
+            f"AND origen IN ('consulta', 'reutilizado'){filtro} ORDER BY consultado_en DESC, id DESC LIMIT 1",
+            parametros,
+        ).fetchone()
+        return _snapshot(fila) if fila else None
+
+
+# --- serialización ----------------------------------------------------------
+
+
+def _json(valor: Any) -> str:
+    return json.dumps(valor, ensure_ascii=False, default=str)
+
+
+def _tipo(resultado: ResultadoFuente) -> str:
+    return {Disponible: "disponible", SinAntecedentes: "sin_antecedentes", NoDisponible: "no_disponible"}[
+        type(resultado)
+    ]
+
+
+def _resultado_a_dict(resultado: ResultadoFuente) -> dict[str, Any]:
+    match resultado:
+        case Disponible(variables=variables):
+            return {"tipo": "disponible", "variables": dict(variables)}
+        case NoDisponible(motivo=motivo):
+            return {"tipo": "no_disponible", "motivo": motivo}
+    return {"tipo": "sin_antecedentes"}
+
+
+def _resultado_desde_dict(datos: dict[str, Any]) -> ResultadoFuente:
+    match datos["tipo"]:
+        case "disponible":
+            return Disponible(datos["variables"])
+        case "no_disponible":
+            return NoDisponible(datos["motivo"])
+    return SinAntecedentes()
+
+
+def _snapshot(fila: sqlite3.Row) -> Snapshot:
+    return Snapshot(
+        fuente=fila["fuente"],
+        consultado_en=datetime.fromisoformat(fila["consultado_en"]),
+        crudo=json.loads(fila["crudo"]) if fila["crudo"] else None,
+        resultado=_resultado_desde_dict(json.loads(fila["resultado"])),
+        origen=fila["origen"],
+        intentos=fila["intentos"],
+        nota=fila["nota"],
+    )
+
+
+def _solicitud(fila: sqlite3.Row) -> SolicitudGuardada:
+    return SolicitudGuardada(
+        id=fila["id"],
+        solicitud=Solicitud(fila["cuit"], fila["segmento"], fila["monto"], fila["plazo_meses"]),
+        documentos=json.loads(fila["documentos"]) if fila["documentos"] else None,
+        origen=fila["origen"],
+        consentimiento=bool(fila["consentimiento"]),
+        creada_en=datetime.fromisoformat(fila["creada_en"]),
+    )
+
+
+def _denominacion(snapshots: tuple[Snapshot, ...]) -> str | None:
+    for fuente, variable in (("cendeu", "denominacion"), ("igj", "razon_social")):
+        for snapshot in snapshots:
+            if snapshot.fuente == fuente and isinstance(snapshot.resultado, Disponible):
+                valor = snapshot.resultado.variables.get(variable)
+                if valor:
+                    return str(valor)
+    return None

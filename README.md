@@ -16,10 +16,18 @@ El alcance acordado está en [docs/acuerdos-demo-v1.md](docs/acuerdos-demo-v1.md
 - `modelos/`: puntos del scorecard por segmento (provisionales hasta entrenar con la cartera sintética).
 - `tests/`: pytest.
 
-## Correr los tests
+## Correr la app
 
 ```bash
 python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/uvicorn relevo.app:crear_app --factory --reload
+```
+
+Abrir http://localhost:8000. La base queda en `data/relevo.sqlite` (cambiarla con `RELEVO_DB`). Al arrancar se cargan los casos de `config/casos_precargados.yaml` y, si existe, de `data/casos_precargados.local.yaml` (casos con CUIL de personas, fuera de git); se evalúan con **Evaluar pendientes**.
+
+## Correr los tests
+
+```bash
 .venv/bin/pytest
 ```
 
