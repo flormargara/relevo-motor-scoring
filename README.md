@@ -10,7 +10,7 @@ El alcance acordado está en [docs/acuerdos-demo-v1.md](docs/acuerdos-demo-v1.md
 
 ## Estructura
 
-- `src/relevo/`: el código. `motor.evaluar` es la entrada del motor (ver [docs/diseno-modulos.md](docs/diseno-modulos.md)).
+- `src/relevo/`: el código. `motor.evaluar` es la entrada del motor (ver [docs/diseno-modulos.md](docs/diseno-modulos.md)). El flujo del motor y sus inputs están en [docs/motor-flujo.md](docs/motor-flujo.md) y el esquema de la base en [docs/der.md](docs/der.md).
 - `rules/`: reglas versionadas por segmento (`pyme.v1.yaml`, `monotributista.v1.yaml`).
 - `config/`: configuración técnica de las fuentes (`fuentes.yaml`) y datos de las fuentes de juguete (`juguete.yaml`).
 - `modelos/`: puntos del scorecard por segmento (provisionales hasta entrenar con la cartera sintética).
@@ -50,6 +50,23 @@ Las pruebas contra la API real del BCRA son opcionales:
 ```bash
 RELEVO_EN_VIVO=1 .venv/bin/pytest -k en_vivo
 ```
+
+## Datos en S3
+
+`data/` está fuera de git (unos 560 MB, con padrones y documentos de ejemplo). Se comparte por el bucket privado `s3://relevo-motor-scoring/data/`. Hace falta AWS CLI y un usuario IAM con acceso al bucket, que da quien lo administra:
+
+```bash
+brew install awscli
+aws configure --profile relevo-s3   # pegar las claves que te dieron; región us-east-1
+scripts/datos_s3.sh bajar
+```
+
+`bajar` trae lo que falta o cambió; con `--dryrun` muestra qué haría sin tocar nada. Quien actualiza un snapshot (ARCA cada tanto, IGJ cada semestre) lo regenera y corre `scripts/datos_s3.sh subir`, y avisa al equipo para que vuelvan a bajar.
+
+- `relevo.sqlite` no se sincroniza: es la base de trabajo de cada uno (solicitudes y evaluaciones).
+- El script nunca borra archivos, ni en el bucket ni en `data/`.
+- Las claves van solo en `~/.aws/credentials`: nunca en el repo ni en `.env`.
+- Variables opcionales: `RELEVO_S3_BUCKET`, `RELEVO_S3_PREFIJO` y `RELEVO_AWS_PERFIL`.
 
 ## Snapshot de IGJ
 
