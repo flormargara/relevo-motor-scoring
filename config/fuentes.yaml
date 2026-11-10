@@ -1,0 +1,18 @@
+# Configuración técnica de cada fuente (ADR 0005 y 0006).
+#
+# costo: gratuita (se precarga en paralelo al empezar) | paga (solo cuando una regla la pide)
+# timeout: segundos por intento
+# reintentos: intentos extra ante timeout / 5xx / error de red
+# espera: segundos entre intentos
+# reutilizar_dias: reutiliza el último snapshot de la misma solicitud si tiene menos de N días
+# alcance: solicitud (default) | global (el dato no depende del solicitante, p. ej. BADLAR)
+# si_falla_usar_ultimo: si la fuente cae, usa el último valor guardado marcado `desactualizada`
+
+cendeu:     {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
+cheques:    {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
+badlar:     {costo: gratuita, timeout: 10, reintentos: 1, espera: 1, alcance: global, si_falla_usar_ultimo: true}
+igj:        {costo: gratuita, reintentos: 0}
+propios:    {costo: gratuita, reintentos: 0}
+identidad:  {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
+documentos: {costo: gratuita, reintentos: 0}
+bureau:     {costo: paga, timeout: 10, reintentos: 1, espera: 1, reutilizar_dias: 30}

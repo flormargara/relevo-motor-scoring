@@ -38,6 +38,9 @@ class Snapshot:
     consultado_en: datetime
     crudo: Any
     resultado: ResultadoFuente
+    origen: str = "consulta"  # consulta | reutilizado | ultimo_guardado
+    intentos: int = 1
+    nota: str | None = None
 
 
 class Consultor(Protocol):

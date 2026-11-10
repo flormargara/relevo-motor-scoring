@@ -16,7 +16,14 @@ CUIL_MONOTRIBUTISTA = "27301234568"
 BASE_PYME: dict[str, dict[str, Any]] = {
     "propios": {"lista_negra": False},
     "igj": {"dada_de_baja": False, "antiguedad_anios": 12},
-    "cendeu": {"peor_situacion_12m": 1, "entidades_con_deuda": 2, "deuda_total": 20_000_000},
+    "cendeu": {
+        "identificacion_rechazada": False,
+        "peor_situacion_12m": 1,
+        "deuda_irregular_12m": 0,
+        "proporcion_irregular_12m": 0.0,
+        "entidades_con_deuda": 2,
+        "deuda_total": 20_000_000,
+    },
     "cheques": {"rechazados_impagos": 0},
     "bureau": {"score": 850},
     "documentos": {"ventas_anuales": 240_000_000, "confianza_minima": 0.95},
@@ -26,7 +33,14 @@ BASE_PYME: dict[str, dict[str, Any]] = {
 BASE_MONOTRIBUTISTA: dict[str, dict[str, Any]] = {
     "propios": {"lista_negra": False},
     "identidad": {"edad": 40},
-    "cendeu": {"peor_situacion_12m": 1, "entidades_con_deuda": 1, "deuda_total": 500_000},
+    "cendeu": {
+        "identificacion_rechazada": False,
+        "peor_situacion_12m": 1,
+        "deuda_irregular_12m": 0,
+        "proporcion_irregular_12m": 0.0,
+        "entidades_con_deuda": 1,
+        "deuda_total": 500_000,
+    },
     "cheques": {"rechazados_impagos": 0},
     "bureau": {"score": 720},
     "documentos": {

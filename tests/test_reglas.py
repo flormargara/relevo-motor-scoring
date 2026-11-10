@@ -83,4 +83,4 @@ def test_modelo_mal_formado(tmp_path: Path):
 
 
 def test_las_fuentes_referenciadas(reglas_pyme):
-    assert reglas_pyme.fuentes == ("propios", "igj", "cendeu", "cheques", "documentos", "bureau", "badlar")
+    assert reglas_pyme.fuentes == ("cendeu", "propios", "igj", "cheques", "documentos", "bureau", "badlar")

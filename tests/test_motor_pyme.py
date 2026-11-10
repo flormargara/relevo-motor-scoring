@@ -88,7 +88,9 @@ def test_cada_fuente_se_consulta_una_sola_vez(reglas_pyme):
         ("lista_negra", {"propios": {"lista_negra": True}}),
         ("sociedad_dada_de_baja", {"igj": {"dada_de_baja": True}}),
         ("antiguedad_menor_a_un_anio", {"igj": {"antiguedad_anios": 0.5}}),
-        ("situacion_bcra_3_o_peor", {"cendeu": {"peor_situacion_12m": 3}}),
+        ("identificacion_rechazada_por_bcra", {"cendeu": {"identificacion_rechazada": True}}),
+        ("situacion_bcra_3_o_peor", {"cendeu": {"peor_situacion_12m": 3, "deuda_irregular_12m": 500_000}}),
+        ("situacion_bcra_3_o_peor", {"cendeu": {"peor_situacion_12m": 4, "proporcion_irregular_12m": 0.05}}),
         ("cheques_rechazados_impagos", {"cheques": {"rechazados_impagos": 2}}),
     ],
 )
@@ -104,7 +106,11 @@ def test_el_primer_killer_corta_y_no_consulta_la_fuente_paga(reglas_pyme):
     evaluacion, consultor = evaluar_pyme(reglas_pyme, propios={"lista_negra": True}, igj={"dada_de_baja": True})
 
     assert evaluacion.motivos == ("lista_negra: El solicitante está en la lista negra de la entidad",)
-    assert [paso.regla for paso in evaluacion.pasos("killer")] == ["identificacion_invalida", "lista_negra"]
+    assert [paso.regla for paso in evaluacion.pasos("killer")] == [
+        "identificacion_invalida",
+        "identificacion_rechazada_por_bcra",
+        "lista_negra",
+    ]
     assert "bureau" not in consultor.pedidas
     assert "bureau" in evaluacion.fuentes_no_consultadas
 
@@ -122,6 +128,16 @@ def test_acepta_cuit_con_guiones(reglas_pyme):
     evaluacion, _ = evaluar_pyme(reglas_pyme, solicitud=solicitud_pyme(cuit="30-71234567-1"))
 
     assert evaluacion.veredicto is Veredicto.APROBADO
+
+
+def test_situacion_mala_inmaterial_no_rechaza(reglas_pyme):
+    evaluacion, _ = evaluar_pyme(
+        reglas_pyme, cendeu={"peor_situacion_12m": 5, "deuda_irregular_12m": 86_000, "proporcion_irregular_12m": 1e-7}
+    )
+
+    assert evaluacion.veredicto is not Veredicto.RECHAZADO
+    situacion = next(p for p in evaluacion.pasos("killer") if p.regla == "situacion_bcra_3_o_peor")
+    assert situacion.resultado == "no salta"
 
 
 # --- sin antecedentes y fuentes no disponibles ----------------------------
@@ -203,6 +219,14 @@ def test_badlar_caida_deriva_sin_oferta(reglas_pyme):
     assert evaluacion.rating == "A"
     assert evaluacion.oferta is None
     assert any("badlar: timeout" in m for m in evaluacion.motivos)
+
+
+def test_badlar_desactualizada_se_usa_y_queda_en_la_traza(reglas_pyme):
+    evaluacion, _ = evaluar_pyme(reglas_pyme, badlar={"tasa": 30.0, "desactualizada": True})
+
+    assert evaluacion.veredicto is Veredicto.APROBADO
+    badlar = next(p for p in evaluacion.pasos("fuente") if p.regla == "badlar")
+    assert badlar.resultado == "disponible (desactualizada)"
 
 
 def test_bureau_caido_usa_puntos_sin_dato_y_deriva(reglas_pyme):

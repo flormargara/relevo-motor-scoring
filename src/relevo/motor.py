@@ -243,6 +243,8 @@ class _Evaluacion:
                 resultado = NoDisponible(f"error inesperado: {type(error).__name__}: {error}")
             self.resultados[fuente] = resultado
             match resultado:
+                case Disponible(variables={"desactualizada": True}):
+                    self._paso("fuente", fuente, "disponible (desactualizada)")
                 case Disponible():
                     self._paso("fuente", fuente, "disponible")
                 case SinAntecedentes():
