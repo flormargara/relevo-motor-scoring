@@ -12,6 +12,7 @@ import pytest
 
 from relevo.consultor_real import AlmacenEnMemoria, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud, Veredicto
+from relevo.fuentes.arca import armar_snapshot as armar_snapshot_arca
 from relevo.fuentes.igj import armar_snapshot
 from relevo.fuentes.juguete import cargar_juguete
 from relevo.motor import evaluar
@@ -60,11 +61,20 @@ def snapshot_igj(tmp_path_factory):
     return carpeta / "igj.sqlite"
 
 
-def evaluar_en_vivo_simulado(cuit, snapshot_igj, documentos, cliente, almacen=None):
+@pytest.fixture(scope="module")
+def snapshot_arca(tmp_path_factory):
+    carpeta = tmp_path_factory.mktemp("arca")
+    with zipfile.ZipFile(carpeta / "arca.zip", "w") as archivo:
+        archivo.writestr("SELE-SAL-CONSTA.p20out1.20261107.tmp", "30546689979YPF SOCIEDAD ANONIMA          ACACNINS00\n")
+    armar_snapshot_arca(carpeta / "arca.zip", carpeta / "arca.sqlite", hoy=HOY)
+    return carpeta / "arca.sqlite"
+
+
+def evaluar_en_vivo_simulado(cuit, snapshot_igj, documentos, cliente, almacen=None, arca=None):
     reglas = cargar_reglas("pyme")
     consultor = ConsultorReal(
         identificacion=cuit,
-        adapters=adapters_por_defecto(cliente, documentos=documentos, igj=snapshot_igj, hoy=lambda: HOY),
+        adapters=adapters_por_defecto(cliente, documentos=documentos, igj=snapshot_igj, arca=arca, hoy=lambda: HOY),
         config=cargar_config_fuentes(),
         almacen=almacen or AlmacenEnMemoria(),
         clave_solicitud=f"sol-{cuit}",
@@ -75,17 +85,19 @@ def evaluar_en_vivo_simulado(cuit, snapshot_igj, documentos, cliente, almacen=No
     return evaluar(Solicitud(cuit=cuit, segmento="pyme", monto=50_000_000, plazo_meses=24), reglas, consultor)
 
 
-def test_ypf_pasa_los_killers_aunque_tenga_situacion_5_inmaterial(snapshot_igj):
+def test_ypf_pasa_los_killers_aunque_tenga_situacion_5_inmaterial(snapshot_igj, snapshot_arca):
     pedidos = []
     evaluacion = evaluar_en_vivo_simulado(
-        YPF, snapshot_igj, {"ventas_anuales": 25e12, "confianza_minima": 0.95}, bcra_desde_fixtures(pedidos)
+        YPF, snapshot_igj, {"ventas_anuales": 25e12, "confianza_minima": 0.95}, bcra_desde_fixtures(pedidos),
+        arca=snapshot_arca,
     )
 
     assert evaluacion.veredicto is Veredicto.APROBADO
-    assert evaluacion.version_reglas == "pyme.v2"
+    assert evaluacion.version_reglas == "pyme.v3"
     assert evaluacion.rating == "B"  # pierde puntos por la situación 5 inmaterial
     assert evaluacion.oferta.tasa_nominal_anual == 21.5 + 10  # BADLAR real del fixture + spread B
     assert {s.fuente for s in evaluacion.snapshots} == {
+        "arca",
         "cendeu",
         "cheques",
         "badlar",

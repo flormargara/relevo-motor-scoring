@@ -1,0 +1,89 @@
+# Reglas del segmento Monotributista (persona humana con actividad), versión 3: v2 más la condición tributaria de ARCA (padrón público).
+# El scorecard es el mismo de la v2; cambian los killers, las derivaciones y la capacidad de pago.
+# Ver los comentarios de pyme.v1.yaml para el formato.
+
+segmento: monotributista
+version: 3
+
+killers:
+  - id: identificacion_invalida
+    descripcion: CUIL inexistente, con dígito verificador inválido o que no es de persona humana
+    condicion: not solicitud.cuit_valido or solicitud.tipo_persona != 'humana'
+    si_no_disponible: rechazar
+  - id: identificacion_rechazada_por_bcra
+    descripcion: La Central de Deudores rechazó la identificación (HTTP 400)
+    condicion: cendeu.identificacion_rechazada
+  - id: lista_negra
+    descripcion: El solicitante está en la lista negra de la entidad
+    condicion: propios.lista_negra
+  - id: sin_inscripcion_vigente
+    descripcion: ARCA no registra inscripción vigente (ni Ganancias, ni IVA, ni monotributo)
+    # Rechaza solo si el CUIT figura en el padrón sin inscripción. Si no figura, deriva (ver derivaciones).
+    condicion: not arca.inscripcion_vigente
+  - id: edad_fuera_de_rango
+    descripcion: Edad menor a 18 o mayor a 75 años
+    condicion: identidad.edad < 18 or identidad.edad > 75
+  - id: antiguedad_menor_a_un_anio
+    descripcion: Menos de un año de actividad inscripta
+    condicion: documentos.antiguedad_actividad_anios < 1
+  - id: situacion_bcra_3_o_peor
+    descripcion: Deuda material en situación 3 o peor en la Central de Deudores en los últimos 12 meses
+    # Material: al menos $500.000 o el 5 % de la deuda del período. Así una deuda chica con
+    # una no bancaria (p. ej. YPF: $86.000 en situación 5 sobre más de $1 billón) no rechaza.
+    condicion: >-
+      cendeu.peor_situacion_12m >= 3
+      and (cendeu.deuda_irregular_12m >= 500000 or cendeu.proporcion_irregular_12m >= 0.05)
+  - id: cheques_rechazados_impagos
+    descripcion: Tiene cheques rechazados sin pagar
+    condicion: cheques.rechazados_impagos > 0
+
+derivaciones:
+  - id: sin_antecedentes_arca
+    descripcion: El CUIT no figura en el padrón público de ARCA
+    condicion: arca.sin_antecedentes
+  - id: sin_antecedentes_bcra
+    descripcion: Sin deuda informada en la Central de Deudores (sin historial crediticio)
+    condicion: cendeu.sin_antecedentes
+  - id: documentos_baja_confianza
+    descripcion: El agente documental extrajo algún campo con baja confianza
+    condicion: documentos.confianza_minima < 0.8
+
+scorecard:
+  modelo: monotributista.v2.json
+  si_no_disponible: continuar
+
+ratings:
+  - {rating: A, pd_hasta: 0.02}
+  - {rating: B, pd_hasta: 0.05}
+  - {rating: C, pd_hasta: 0.10}
+  - {rating: D, pd_hasta: 0.20}
+  - {rating: E, pd_hasta: 1.00}
+
+politica:
+  rechazar_ratings: [E]
+  derivar_ratings: []
+  tasa_base: badlar.tasa
+  spread_por_rating: {A: 8, B: 12, C: 18, D: 25}
+  capacidad_pago:
+    tipo: cuota_ingreso
+    categoria: arca.categoria_monotributo       # padrón de ARCA; ya no sale de la constancia
+    relacion_cuota_ingreso: 0.30     # la cuota no supera el 30 % del ingreso mensual estimado
+    # Ingreso anual de referencia por categoría.
+    # PROVISORIOS: reemplazar por los topes vigentes de ARCA antes de la demo.
+    # Si ARCA no informa categoría (p. ej. responsable inscripto), la capacidad de pago no es evaluable y deriva.
+    ingreso_anual_por_categoria:
+      A: 8000000
+      B: 12000000
+      C: 17000000
+      D: 21000000
+      E: 26000000
+      F: 32000000
+      G: 38000000
+      H: 58000000
+      I: 65000000
+      J: 75000000
+      K: 90000000
+  monto_minimo: 300000
+  redondeo_monto: 1000
+  plazo_meses: {minimo: 3, maximo: 24}
+  si_no_disponible: derivar

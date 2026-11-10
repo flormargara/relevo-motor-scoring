@@ -62,7 +62,7 @@ def test_alta_evalua_y_muestra_el_caso(cliente):
     assert "APROBADO" in caso.text
     assert "identificacion_invalida" in caso.text  # la traza
     assert "$ 10.000.000" in caso.text  # la oferta
-    assert "pyme.v2" in caso.text
+    assert "pyme.v3" in caso.text
     assert "respuesta cruda" in caso.text
 
     bandeja = http.get("/")
@@ -152,7 +152,7 @@ def test_evaluar_pendientes(cliente):
 def test_pantalla_de_reglas(cliente, segmento):
     pagina = cliente()[0].get(f"/reglas?segmento={segmento}").text
 
-    assert f"{segmento}.v2" in pagina
+    assert f"{segmento}.v3" in pagina
     assert "situacion_bcra_3_o_peor" in pagina
     assert "AUC" in pagina
 

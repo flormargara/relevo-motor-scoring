@@ -44,7 +44,7 @@ def test_alta_y_evaluacion(reglas_pyme):
 
     guardada = servicio.repositorio.evaluacion(evaluacion_id)
     assert guardada.evaluacion.solicitud.cuit == CUIT_PYME  # normalizado
-    assert guardada.evaluacion.version_reglas == "pyme.v2"
+    assert guardada.evaluacion.version_reglas == "pyme.v3"
     assert guardada.evaluacion.veredicto is Veredicto.APROBADO
     assert {s.fuente for s in guardada.evaluacion.snapshots} >= {"cendeu", "bureau", "documentos"}
 
@@ -149,7 +149,7 @@ def test_el_archivo_de_casos_versionado_carga():
 def test_texto_de_reglas():
     reglas, texto, metricas = armar()[0].texto_reglas("pyme")
 
-    assert reglas.id == "pyme.v2" and "killers:" in texto and metricas["auc"] > 0.6
+    assert reglas.id == "pyme.v3" and "killers:" in texto and metricas["auc"] > 0.6
 
 
 # --- agentes ---------------------------------------------------------------
