@@ -105,3 +105,15 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 3. `sintetico`: entrenar el scorecard y reemplazar los coeficientes provisionales.
 4. `repositorio` + `app`.
 5. `agentes` (CLI, después API).
+
+## Decisiones tomadas al construir el paso 1
+
+- **`solicitud` es una pseudo-fuente** que resuelve el propio motor: `solicitud.cuit_valido` (prefijo + dígito verificador), `solicitud.tipo_persona` (`humana` / `juridica`), `monto`, `plazo_meses`. Así el killer de identificación inválida se escribe en el YAML como cualquier otro y no consulta nada.
+- **Los cheques rechazados son una fuente aparte (`cheques`)**, aunque vengan del mismo servicio que CENDEU. Cada endpoint del BCRA responde 404 por su cuenta, y mezclarlos rompía la semántica de *sin antecedentes* (ADR 0003).
+- **Semántica de los datos faltantes** dentro de una condición:
+  - fuente *sin antecedentes*, o variable con valor `null` → **sin dato**: el killer o la derivación no salta, y en el scorecard se usan los puntos `sin_dato` de la característica;
+  - fuente *no disponible*, variable ausente o tipo de dato inesperado → **no evaluable**: se aplica `si_no_disponible` de la regla (ADR 0006);
+  - `fuente.sin_antecedentes` siempre se puede preguntar, y vale `true` o `false`.
+- **Derivaciones**: sección propia del YAML. No cortan: marcan la evaluación y siguen, así un rechazo posterior (rating E, monto mínimo) gana por precedencia. Si nada rechaza, la oferta calculada queda como propuesta para el analista.
+- **Scorecard**: escala estándar (`puntos_base`, `odds_base`, `pdo`), tramos por característica (`hasta` inclusive, o `valor` exacto) y puntos `sin_dato`. Una característica puede ser una expresión (`cendeu.deuda_total / documentos.ventas_anuales`). Los modelos `v1` están marcados `provisional: true` hasta el paso 3.
+- **Política sin datos** (BADLAR caída, sin balance, categoría desconocida) → `DERIVAR` sin oferta (o `RECHAZADO` si `politica.si_no_disponible: rechazar`).

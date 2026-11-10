@@ -1,0 +1,39 @@
+{
+  "segmento": "monotributista",
+  "version": 1,
+  "provisional": true,
+  "nota": "Puntos provisionales puestos a mano. Se reemplazan por los que entrena `sintetico` (paso 3).",
+  "escala": {"puntos_base": 150, "odds_base": 20, "pdo": 30},
+  "caracteristicas": [
+    {
+      "nombre": "peor_situacion_12m",
+      "expresion": "cendeu.peor_situacion_12m",
+      "tramos": [{"hasta": 1, "puntos": 45}, {"hasta": 2, "puntos": 10}, {"puntos": -20}],
+      "sin_dato": 15
+    },
+    {
+      "nombre": "entidades_con_deuda",
+      "expresion": "cendeu.entidades_con_deuda",
+      "tramos": [{"hasta": 2, "puntos": 30}, {"hasta": 4, "puntos": 20}, {"puntos": 5}],
+      "sin_dato": 15
+    },
+    {
+      "nombre": "score_bureau",
+      "expresion": "bureau.score",
+      "tramos": [{"hasta": 400, "puntos": -10}, {"hasta": 600, "puntos": 15}, {"hasta": 800, "puntos": 35}, {"puntos": 55}],
+      "sin_dato": 10
+    },
+    {
+      "nombre": "antiguedad_actividad_anios",
+      "expresion": "documentos.antiguedad_actividad_anios",
+      "tramos": [{"hasta": 2, "puntos": 5}, {"hasta": 5, "puntos": 20}, {"puntos": 35}],
+      "sin_dato": 0
+    },
+    {
+      "nombre": "edad",
+      "expresion": "identidad.edad",
+      "tramos": [{"hasta": 25, "puntos": 5}, {"hasta": 60, "puntos": 25}, {"puntos": 15}],
+      "sin_dato": 10
+    }
+  ]
+}
