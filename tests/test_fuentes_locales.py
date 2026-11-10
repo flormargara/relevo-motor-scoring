@@ -142,3 +142,19 @@ def test_el_archivo_de_juguete_carga():
 def test_documentos():
     assert consultar(Documentos({"ventas_anuales": 1}), "x") == Disponible({"ventas_anuales": 1})
     assert consultar(Documentos(None), "x") == SinAntecedentes()
+
+
+def test_identidad_declarada_expone_edad_origen_y_no_validada():
+    from relevo.fuentes.identidad import IdentidadDeclarada
+
+    adapter = IdentidadDeclarada(date(1986, 11, 11), hoy=lambda: HOY)
+
+    variables = consultar(adapter, "27301234568").variables
+    assert variables == {"edad": 39, "validada": False, "origen": "declarada"}
+
+
+def test_identidad_declarada_sin_fecha_es_sin_antecedentes():
+    from relevo.consultor import SinAntecedentes
+    from relevo.fuentes.identidad import IdentidadDeclarada
+
+    assert isinstance(consultar(IdentidadDeclarada(None, hoy=lambda: HOY), "27301234568"), SinAntecedentes)

@@ -17,7 +17,7 @@ Préstamo de capital de trabajo, cuotas fijas (sistema francés).
 | BCRA Estadísticas v4 (BADLAR, id 7) | Real, en vivo | Tasa base de la oferta |
 | IGJ (datos.jus.gob.ar) | Snapshot precargado | Existencia, baja y antigüedad de la sociedad |
 | Bureau comercial | Juguete | Score de bureau |
-| Identidad (tipo RENAPER) | Juguete | Validación de identidad |
+| Identidad (tipo RENAPER) | Fecha de nacimiento declarada en el alta (casos precargados: juguete) | Edad; RENAPER queda para producción |
 | Datos propios de la entidad | Juguete | Lista negra, historial |
 | ARCA padrón público (archivo de condición tributaria) | Snapshot precargado | Condición ante Ganancias e IVA, categoría de monotributo, empleador |
 | ARCA web services (con certificado WSAA) | **Fase 2** | Fecha de inicio y actividades |
@@ -83,4 +83,4 @@ Empresas grandes con datos públicos en CENDEU, consultadas en vivo, más un CUI
 - Simulador de políticas y backtesting.
 - Cobranzas.
 - ARCA con certificado (fecha de inicio y actividades).
-- RENAPER (fecha de nacimiento real desde datos.gob.ar) para reemplazar identidad mock.
+- RENAPER en producción: validar la fecha de nacimiento con el servicio de validación de identidad (Convenio Único de Confronte de Datos, trámite por TAD; RENAPER decide el interés legítimo). Hay que confirmar con RENAPER si devuelve la fecha de nacimiento. En la demo la fecha la carga el analista en el alta (`origen: declarada`, sin verificar). La fuente `identidad` ya expone `edad`, `validada` y `origen`, así que el adapter de RENAPER entra con `origen: renaper` y `validada: true` sin tocar reglas ni ficha.

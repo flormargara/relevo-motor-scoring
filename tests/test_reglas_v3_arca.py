@@ -1,8 +1,8 @@
 """Reglas v3: la condición tributaria de ARCA entra al motor."""
 
 import pytest
-from conftest import BASE_MONOTRIBUTISTA, BASE_PYME, armar_consultor, solicitud_monotributista, solicitud_pyme
 
+from conftest import BASE_MONOTRIBUTISTA, BASE_PYME, armar_consultor, solicitud_monotributista, solicitud_pyme
 from relevo.consultor import NoDisponible, SinAntecedentes
 from relevo.dominio import Veredicto
 from relevo.motor import evaluar
@@ -64,3 +64,10 @@ def test_sin_categoria_en_arca_la_oferta_deriva():
     )
 
     assert evaluacion.veredicto is Veredicto.DERIVAR
+
+
+def test_monotributista_sin_fecha_de_nacimiento_deriva():
+    evaluacion = correr("monotributista", BASE_MONOTRIBUTISTA, solicitud_monotributista(), identidad=SinAntecedentes())
+
+    assert evaluacion.veredicto is Veredicto.DERIVAR
+    assert any(m.startswith("sin_fecha_de_nacimiento") for m in evaluacion.motivos)

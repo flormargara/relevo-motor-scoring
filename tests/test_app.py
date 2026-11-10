@@ -253,3 +253,31 @@ def test_reextraer_documentos(cliente):
     caso = http.post(f"{caso_url}/documentos/extraer")
 
     assert "Reevaluá" in caso.text and "$ 240.000.000" in caso.text
+
+
+def test_el_formulario_pide_la_fecha_de_nacimiento_y_la_guarda(cliente):
+    from datetime import date
+
+    http, servicio = cliente()
+
+    assert 'name="fecha_nacimiento"' in http.get("/").text
+    respuesta = alta(
+        http, cuit=CUIL_MONOTRIBUTISTA, segmento="monotributista", consentimiento="true", fecha_nacimiento="1986-11-11"
+    )
+
+    assert respuesta.status_code == 303
+    id = respuesta.headers["location"].rsplit("/", 1)[1]
+    assert servicio.repositorio.solicitud(id).fecha_nacimiento == date(1986, 11, 11)
+
+
+def test_fecha_de_nacimiento_invalida_muestra_el_error(cliente):
+    respuesta = alta(
+        cliente()[0],
+        cuit=CUIL_MONOTRIBUTISTA,
+        segmento="monotributista",
+        consentimiento="true",
+        fecha_nacimiento="1850-01-01",
+    )
+
+    assert respuesta.status_code == 400
+    assert "fecha de nacimiento" in respuesta.text

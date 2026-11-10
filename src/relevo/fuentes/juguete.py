@@ -95,4 +95,4 @@ class Identidad(_Juguete):
         nacimiento = date.fromisoformat(crudo["fecha_nacimiento"])
         hoy = date.fromisoformat(crudo["fecha_consulta"])
         edad = hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
-        return Disponible({"edad": edad, "validada": crudo["validada"]})
+        return Disponible({"edad": edad, "validada": crudo["validada"], "origen": "simulada"})

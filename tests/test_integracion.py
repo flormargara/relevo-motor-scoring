@@ -65,7 +65,9 @@ def snapshot_igj(tmp_path_factory):
 def snapshot_arca(tmp_path_factory):
     carpeta = tmp_path_factory.mktemp("arca")
     with zipfile.ZipFile(carpeta / "arca.zip", "w") as archivo:
-        archivo.writestr("SELE-SAL-CONSTA.p20out1.20261107.tmp", "30546689979YPF SOCIEDAD ANONIMA          ACACNINS00\n")
+        archivo.writestr(
+            "SELE-SAL-CONSTA.p20out1.20261107.tmp", "30546689979YPF SOCIEDAD ANONIMA          ACACNINS00\n"
+        )
     armar_snapshot_arca(carpeta / "arca.zip", carpeta / "arca.sqlite", hoy=HOY)
     return carpeta / "arca.sqlite"
 
@@ -88,7 +90,10 @@ def evaluar_en_vivo_simulado(cuit, snapshot_igj, documentos, cliente, almacen=No
 def test_ypf_pasa_los_killers_aunque_tenga_situacion_5_inmaterial(snapshot_igj, snapshot_arca):
     pedidos = []
     evaluacion = evaluar_en_vivo_simulado(
-        YPF, snapshot_igj, {"ventas_anuales": 25e12, "confianza_minima": 0.95}, bcra_desde_fixtures(pedidos),
+        YPF,
+        snapshot_igj,
+        {"ventas_anuales": 25e12, "confianza_minima": 0.95},
+        bcra_desde_fixtures(pedidos),
         arca=snapshot_arca,
     )
 

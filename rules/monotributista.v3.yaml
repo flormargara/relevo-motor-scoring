@@ -38,6 +38,9 @@ killers:
     condicion: cheques.rechazados_impagos > 0
 
 derivaciones:
+  - id: sin_fecha_de_nacimiento
+    descripcion: No hay fecha de nacimiento (declarada ni validada), así que no se puede controlar la edad
+    condicion: identidad.sin_antecedentes
   - id: sin_antecedentes_arca
     descripcion: El CUIT no figura en el padrón público de ARCA
     condicion: arca.sin_antecedentes

@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS solicitudes (
     documentos TEXT,             -- JSON con los campos extraídos, o NULL
     origen TEXT NOT NULL,        -- precargado | manual
     consentimiento INTEGER NOT NULL DEFAULT 0,
-    creada_en TEXT NOT NULL
+    creada_en TEXT NOT NULL,
+    fecha_nacimiento TEXT        -- ISO, declarada en el alta, o NULL
 );
 
 CREATE TABLE IF NOT EXISTS evaluaciones (
@@ -112,6 +113,7 @@ class SolicitudGuardada:
     origen: str
     consentimiento: bool
     creada_en: datetime
+    fecha_nacimiento: date | None = None  # declarada en el alta
 
 
 @dataclass(frozen=True)
@@ -171,6 +173,9 @@ class Repositorio:
         self._lock = threading.RLock()
         with self._lock:
             self._conexion.executescript(ESQUEMA)
+            columnas = {fila[1] for fila in self._conexion.execute("PRAGMA table_info(solicitudes)")}
+            if "fecha_nacimiento" not in columnas:  # base creada antes de la fecha declarada
+                self._conexion.execute("ALTER TABLE solicitudes ADD COLUMN fecha_nacimiento TEXT")
 
     def _ejecutar(self, sql: str, parametros: Any = ()) -> sqlite3.Cursor:
         with self._lock, self._conexion:
@@ -186,10 +191,12 @@ class Repositorio:
         consentimiento: bool = False,
         id: str | None = None,
         ahora: datetime | None = None,
+        fecha_nacimiento: date | None = None,
     ) -> str:
         id = id or uuid.uuid4().hex[:12]
         self._ejecutar(
-            "INSERT INTO solicitudes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO solicitudes (id, cuit, segmento, monto, plazo_meses, documentos, origen, consentimiento, "
+            "creada_en, fecha_nacimiento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 id,
                 solicitud.cuit,
@@ -200,6 +207,7 @@ class Repositorio:
                 origen,
                 int(consentimiento),
                 (ahora or datetime.now()).isoformat(),
+                fecha_nacimiento.isoformat() if fecha_nacimiento else None,
             ),
         )
         return id
@@ -483,6 +491,7 @@ def _solicitud(fila: sqlite3.Row) -> SolicitudGuardada:
         origen=fila["origen"],
         consentimiento=bool(fila["consentimiento"]),
         creada_en=datetime.fromisoformat(fila["creada_en"]),
+        fecha_nacimiento=date.fromisoformat(fila["fecha_nacimiento"]) if fila["fecha_nacimiento"] else None,
     )
 
 
