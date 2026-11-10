@@ -14,7 +14,7 @@ import shutil
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
 from relevo.fuentes import AdapterFuente
+from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.motor import evaluar
 from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas, cargar_reglas
 from relevo.repositorio import AlmacenSqlite, Repositorio, SolicitudGuardada
@@ -76,7 +77,15 @@ class Servicio:
         with self._lock:
             if self._cliente is None:
                 self._cliente = httpx.Client()
-        return adapters_por_defecto(self._cliente, documentos=guardada.documentos)
+        # Los casos precargados usan la identidad simulada; el alta manual usa la fecha declarada.
+        # En producción, RENAPER ocupa el lugar de IdentidadDeclarada con las mismas variables.
+        identidad = None
+        if guardada.origen == "manual":
+            identidad = IdentidadDeclarada(guardada.fecha_nacimiento, hoy=self.ahora_fecha)
+        return adapters_por_defecto(self._cliente, documentos=guardada.documentos, identidad=identidad)
+
+    def ahora_fecha(self) -> date:
+        return self.ahora().date()
 
     # --- casos de uso -----------------------------------------------------
 
@@ -92,6 +101,7 @@ class Servicio:
         id: str | None = None,
         archivos: Sequence[ArchivoSubido] = (),
         campos_manuales: Mapping[str, Any] | None = None,
+        fecha_nacimiento: date | str | None = None,
     ) -> str:
         """Da de alta una solicitud.
 
@@ -116,10 +126,17 @@ class Servicio:
                 raise SolicitudInvalida(
                     f"tipo de documento no soportado: {nombre} ({', '.join(EXTENSIONES_DOCUMENTO)})"
                 )
+        nacimiento = _fecha_nacimiento(fecha_nacimiento, self.ahora().date())
         documentos = {k: v for k, v in (documentos or {}).items() if v not in (None, "")} or None
         solicitud = Solicitud(cuit=cuit, segmento=segmento, monto=float(monto), plazo_meses=int(plazo_meses))
         id = self.repositorio.crear_solicitud(
-            solicitud, documentos, origen=origen, consentimiento=consentimiento, id=id, ahora=self.ahora()
+            solicitud,
+            documentos,
+            origen=origen,
+            consentimiento=consentimiento,
+            id=id,
+            ahora=self.ahora(),
+            fecha_nacimiento=nacimiento,
         )
         manual = agentes.documento_manual(campos_manuales or {})
         if manual:
@@ -234,6 +251,18 @@ class Servicio:
         texto = (self.directorio_reglas / f"{segmento}.v{reglas.version}.yaml").read_text(encoding="utf-8")
         modelo = json.loads((DIRECTORIO_MODELOS / reglas.scorecard.modelo).read_text(encoding="utf-8"))
         return reglas, texto, modelo.get("metricas")
+
+
+def _fecha_nacimiento(valor: date | str | None, hoy: date) -> date | None:
+    if valor in (None, ""):
+        return None
+    try:
+        fecha = valor if isinstance(valor, date) else date.fromisoformat(str(valor))
+    except ValueError:
+        raise SolicitudInvalida(f"fecha de nacimiento inválida: {valor!r} (formato AAAA-MM-DD)") from None
+    if not date(1900, 1, 1) <= fecha < hoy:
+        raise SolicitudInvalida(f"fecha de nacimiento fuera de rango: {fecha.isoformat()}")
+    return fecha
 
 
 def _nombre_seguro(nombre: str) -> str:

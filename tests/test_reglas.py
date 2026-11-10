@@ -18,7 +18,7 @@ def test_carga_las_reglas_de_cada_segmento(segmento):
     reglas = cargar_reglas(segmento)
 
     assert reglas.segmento == segmento
-    assert reglas.id == f"{segmento}.v2"
+    assert reglas.id == f"{segmento}.v3"
     assert reglas.killers[0].id == "identificacion_invalida"
     assert not reglas.scorecard.provisional
     assert cargar_reglas(segmento, version=1).scorecard.provisional

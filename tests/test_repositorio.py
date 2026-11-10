@@ -167,3 +167,24 @@ def test_documentos_de_la_solicitud(repo):
         ("carga manual", None, "manual", None),
     ]
     assert repo.solicitud(id).documentos == {"ventas_anuales": 1.0, "confianza_minima": 1.0}
+
+
+def test_una_base_vieja_gana_la_columna_de_fecha_de_nacimiento(tmp_path):
+    import sqlite3
+
+    ruta = tmp_path / "vieja.sqlite"
+    conexion = sqlite3.connect(ruta)
+    conexion.execute(
+        "CREATE TABLE solicitudes (id TEXT PRIMARY KEY, cuit TEXT NOT NULL, segmento TEXT NOT NULL, "
+        "monto REAL NOT NULL, plazo_meses INTEGER NOT NULL, documentos TEXT, origen TEXT NOT NULL, "
+        "consentimiento INTEGER NOT NULL DEFAULT 0, creada_en TEXT NOT NULL)"
+    )
+    conexion.execute(
+        "INSERT INTO solicitudes VALUES ('a', '30712345671', 'pyme', 1, 1, NULL, 'manual', 0, '2026-11-10T00:00:00')"
+    )
+    conexion.commit()
+    conexion.close()
+
+    repo = Repositorio(ruta)
+
+    assert repo.solicitud("a").fecha_nacimiento is None

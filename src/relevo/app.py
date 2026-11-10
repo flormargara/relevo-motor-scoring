@@ -78,6 +78,7 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
         ventas_anuales: Annotated[float | None, Form()] = None,
         categoria_monotributo: Annotated[str | None, Form()] = None,
         antiguedad_actividad_anios: Annotated[float | None, Form()] = None,
+        fecha_nacimiento: Annotated[str | None, Form()] = None,
         archivos: Annotated[list[UploadFile] | None, File()] = None,
     ):
         if segmento == "pyme":
@@ -97,6 +98,7 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
                 consentimiento=consentimiento,
                 archivos=subidos,
                 campos_manuales=manuales,
+                fecha_nacimiento=fecha_nacimiento if segmento == "monotributista" else None,
             )
         except SolicitudInvalida as error:
             formulario = {"cuit": cuit, "segmento": segmento, "monto": monto, "plazo_meses": plazo_meses}

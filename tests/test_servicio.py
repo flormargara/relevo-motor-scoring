@@ -44,7 +44,7 @@ def test_alta_y_evaluacion(reglas_pyme):
 
     guardada = servicio.repositorio.evaluacion(evaluacion_id)
     assert guardada.evaluacion.solicitud.cuit == CUIT_PYME  # normalizado
-    assert guardada.evaluacion.version_reglas == "pyme.v2"
+    assert guardada.evaluacion.version_reglas == "pyme.v3"
     assert guardada.evaluacion.veredicto is Veredicto.APROBADO
     assert {s.fuente for s in guardada.evaluacion.snapshots} >= {"cendeu", "bureau", "documentos"}
 
@@ -149,7 +149,7 @@ def test_el_archivo_de_casos_versionado_carga():
 def test_texto_de_reglas():
     reglas, texto, metricas = armar()[0].texto_reglas("pyme")
 
-    assert reglas.id == "pyme.v2" and "killers:" in texto and metricas["auc"] > 0.6
+    assert reglas.id == "pyme.v3" and "killers:" in texto and metricas["auc"] > 0.6
 
 
 # --- agentes ---------------------------------------------------------------
@@ -277,3 +277,41 @@ def test_sin_agente_el_informe_falla_sin_guardar_nada():
         servicio.preguntar(evaluacion_id, "¿Por qué?")
     assert servicio.repositorio.informe(evaluacion_id) is None
     assert servicio.repositorio.chat(evaluacion_id) == []
+
+
+def test_alta_guarda_la_fecha_de_nacimiento_declarada():
+    from datetime import date
+
+    servicio, _ = armar(FabricaFalsa(BASE_MONOTRIBUTISTA))
+
+    id = servicio.alta(
+        CUIL_MONOTRIBUTISTA, "monotributista", 500_000, 12, consentimiento=True, fecha_nacimiento="1986-11-11"
+    )
+
+    assert servicio.repositorio.solicitud(id).fecha_nacimiento == date(1986, 11, 11)
+
+
+@pytest.mark.parametrize("fecha", ["11/11/1986", "1850-01-01", "2999-01-01"])
+def test_alta_rechaza_una_fecha_de_nacimiento_invalida(fecha):
+    servicio, _ = armar(FabricaFalsa(BASE_MONOTRIBUTISTA))
+
+    with pytest.raises(SolicitudInvalida, match="fecha de nacimiento"):
+        servicio.alta(CUIL_MONOTRIBUTISTA, "monotributista", 500_000, 12, consentimiento=True, fecha_nacimiento=fecha)
+
+
+def test_la_identidad_real_sale_de_la_fecha_declarada_en_el_alta_manual():
+    from relevo.fuentes.identidad import IdentidadDeclarada
+
+    servicio, _ = armar(FabricaFalsa(BASE_MONOTRIBUTISTA))
+    manual = servicio.alta(
+        CUIL_MONOTRIBUTISTA, "monotributista", 500_000, 12, consentimiento=True, fecha_nacimiento="1986-11-11"
+    )
+    precargado = servicio.alta(
+        CUIL_MONOTRIBUTISTA, "monotributista", 500_000, 12, consentimiento=True, origen="precargado"
+    )
+
+    declarada = servicio._adapters_reales(servicio.repositorio.solicitud(manual))["identidad"]
+    simulada = servicio._adapters_reales(servicio.repositorio.solicitud(precargado))["identidad"]
+
+    assert isinstance(declarada, IdentidadDeclarada) and declarada.fecha_nacimiento.year == 1986
+    assert not isinstance(simulada, IdentidadDeclarada)

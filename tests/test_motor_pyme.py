@@ -63,7 +63,7 @@ def test_la_traza_cuenta_cada_paso(reglas_pyme):
 def test_guarda_un_snapshot_por_fuente_consultada(reglas_pyme):
     evaluacion, _ = evaluar_pyme(reglas_pyme)
 
-    assert sorted(s.fuente for s in evaluacion.snapshots) == sorted(BASE_PYME)
+    assert sorted(s.fuente for s in evaluacion.snapshots) == sorted(set(BASE_PYME) - {"arca"})  # la v1 no usa ARCA
 
 
 def test_es_deterministico(reglas_pyme):

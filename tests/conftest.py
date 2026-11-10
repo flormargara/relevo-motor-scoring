@@ -28,6 +28,7 @@ BASE_PYME: dict[str, dict[str, Any]] = {
     "bureau": {"score": 850},
     "documentos": {"ventas_anuales": 240_000_000, "confianza_minima": 0.95},
     "badlar": {"tasa": 30.0},
+    "arca": {"inscripcion_vigente": True},
 }
 
 BASE_MONOTRIBUTISTA: dict[str, dict[str, Any]] = {
@@ -49,6 +50,7 @@ BASE_MONOTRIBUTISTA: dict[str, dict[str, Any]] = {
         "confianza_minima": 0.9,
     },
     "badlar": {"tasa": 30.0},
+    "arca": {"inscripcion_vigente": True, "categoria_monotributo": "D"},
 }
 
 

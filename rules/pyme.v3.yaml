@@ -1,0 +1,80 @@
+# Reglas del segmento PyME (persona jurídica), versión 3: v2 más la condición tributaria de ARCA (padrón público).
+# El scorecard es el mismo de la v2; cambian los killers y las derivaciones.
+# Las condiciones usan el lenguaje acotado de relevo.condiciones: `fuente.variable`,
+# comparaciones, and/or/not, + - * / y listas de constantes.
+# `si_no_disponible`: continuar (default) | derivar | rechazar. Ver ADR 0006.
+
+segmento: pyme
+version: 3
+
+# El orden es parte de la política (ADR 0005): de lo más barato y frecuente a lo más caro.
+# El primer killer que salta rechaza y corta la evaluación.
+killers:
+  - id: identificacion_invalida
+    descripcion: CUIT inexistente, con dígito verificador inválido o que no es de persona jurídica
+    condicion: not solicitud.cuit_valido or solicitud.tipo_persona != 'juridica'
+    si_no_disponible: rechazar
+  - id: identificacion_rechazada_por_bcra
+    descripcion: La Central de Deudores rechazó la identificación (HTTP 400)
+    condicion: cendeu.identificacion_rechazada
+  - id: lista_negra
+    descripcion: El solicitante está en la lista negra de la entidad
+    condicion: propios.lista_negra
+  - id: sin_inscripcion_vigente
+    descripcion: ARCA no registra inscripción vigente (ni Ganancias, ni IVA, ni monotributo)
+    # Rechaza solo si el CUIT figura en el padrón sin inscripción. Si no figura, deriva (ver derivaciones).
+    condicion: not arca.inscripcion_vigente
+  - id: sociedad_dada_de_baja
+    descripcion: La sociedad figura dada de baja en IGJ
+    condicion: igj.dada_de_baja
+  - id: antiguedad_menor_a_un_anio
+    descripcion: La sociedad tiene menos de un año de antigüedad
+    condicion: igj.antiguedad_anios < 1
+  - id: situacion_bcra_3_o_peor
+    descripcion: Deuda material en situación 3 o peor en la Central de Deudores en los últimos 12 meses
+    # Material: al menos $500.000 o el 5 % de la deuda del período. Así una deuda chica con
+    # una no bancaria (p. ej. YPF: $86.000 en situación 5 sobre más de $1 billón) no rechaza.
+    condicion: >-
+      cendeu.peor_situacion_12m >= 3
+      and (cendeu.deuda_irregular_12m >= 500000 or cendeu.proporcion_irregular_12m >= 0.05)
+  - id: cheques_rechazados_impagos
+    descripcion: Tiene cheques rechazados sin pagar
+    condicion: cheques.rechazados_impagos > 0
+
+# No cortan: marcan la evaluación para un analista. Si después algo rechaza, gana el rechazo.
+derivaciones:
+  - id: sin_antecedentes_arca
+    descripcion: El CUIT no figura en el padrón público de ARCA
+    condicion: arca.sin_antecedentes
+  - id: sin_antecedentes_bcra
+    descripcion: Sin deuda informada en la Central de Deudores (sin historial crediticio)
+    condicion: cendeu.sin_antecedentes
+  - id: documentos_baja_confianza
+    descripcion: El agente documental extrajo algún campo con baja confianza
+    condicion: documentos.confianza_minima < 0.8
+
+scorecard:
+  modelo: pyme.v2.json
+  si_no_disponible: continuar
+
+# Cada rating cubre las PD hasta `pd_hasta` (inclusive). El último debe llegar a 1.
+ratings:
+  - {rating: A, pd_hasta: 0.02}
+  - {rating: B, pd_hasta: 0.05}
+  - {rating: C, pd_hasta: 0.10}
+  - {rating: D, pd_hasta: 0.20}
+  - {rating: E, pd_hasta: 1.00}
+
+politica:
+  rechazar_ratings: [E]
+  derivar_ratings: []
+  tasa_base: badlar.tasa            # TNA en %
+  spread_por_rating: {A: 6, B: 10, C: 15, D: 22}   # puntos porcentuales de TNA
+  capacidad_pago:
+    tipo: porcentaje_ventas
+    ventas_anuales: documentos.ventas_anuales
+    porcentaje_cuota: 0.10           # la cuota no supera el 10 % de las ventas mensuales
+  monto_minimo: 1000000
+  redondeo_monto: 1000
+  plazo_meses: {minimo: 6, maximo: 36}
+  si_no_disponible: derivar

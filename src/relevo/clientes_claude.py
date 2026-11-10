@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 RAIZ = Path(__file__).resolve().parents[2]
-MODELO_API = "claude-opus-5-5"
+MODELO_API = "claude-haiku-5-5"
 TIPOS_IMAGEN = {
     ".png": "image/png",
     ".jpg": "image/jpeg",

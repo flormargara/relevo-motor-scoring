@@ -129,8 +129,15 @@ def ficha_solicitante(
             dato_categoria = _desde_documentos("Categoría de monotributo", campos_doc, "categoria_monotributo", str)
         datos.append(dato_categoria)
         if campos_doc.get("fecha_inicio_actividades"):
-            datos.append(Dato("Inicio de actividades", _fecha_iso(campos_doc["fecha_inicio_actividades"]), "documentos"))
-        datos.append(_desde_fuente("Edad", fuentes, "identidad", "edad", lambda v: f"{numero(v)} años"))
+            datos.append(
+                Dato("Inicio de actividades", _fecha_iso(campos_doc["fecha_inicio_actividades"]), "documentos")
+            )
+        edad = _desde_fuente("Edad", fuentes, "identidad", "edad", lambda v: f"{numero(v)} años")
+        origen = _variable(fuentes.get("identidad"), "origen")
+        if origen and edad.valor != "—":
+            validada = _variable(fuentes.get("identidad"), "validada")
+            edad = Dato(edad.etiqueta, edad.valor, f"identidad: {origen}" + ("" if validada else " (sin verificar)"))
+        datos.append(edad)
 
     # Datos de ARCA para ambos segmentos
     datos += [

@@ -94,7 +94,7 @@ def test_api_manda_pdf_imagen_y_texto(tmp_path):
     assert ClaudeAPI(cliente=sdk).completar("extraé", [pdf, png, txt], sistema="Sos preciso.") == "listo"
 
     p = sdk.parametros
-    assert p["model"] == "claude-opus-5-5"
+    assert p["model"] == "claude-haiku-5-5"
     assert p["system"] == "Sos preciso."
     assert p["fallbacks"] == "default"
     tipos = [b["type"] for b in p["messages"][0]["content"]]
