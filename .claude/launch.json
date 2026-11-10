@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "relevo",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["relevo.app:crear_app", "--factory", "--reload", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}
