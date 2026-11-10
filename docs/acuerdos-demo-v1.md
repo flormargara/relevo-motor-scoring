@@ -29,16 +29,21 @@ Constancia de inscripción ARCA y balance / estados contables. Los extrae el **a
 ## Motor (determinístico)
 - **Killers** por segmento: identificación inválida (incluye dígito verificador), edad, situación BCRA ≥ 3 en los últimos 12 meses, cheques rechazados impagos, lista negra, sociedad dada de baja, antigüedad < 1 año.
 - **PD**: un scorecard logístico por segmento, entrenado sobre una cartera sintética y explicable por puntos.
-- **Banda** de riesgo A–E a partir de la PD.
+- **Rating** de riesgo A–E a partir de la PD.
 - **Política**:
-  - Banda E → rechazo.
+  - Rating E → rechazo.
   - Monto máximo = % de ventas (PyME) o relación cuota/ingreso (monotributista).
-  - Tasa = BADLAR + spread por banda.
+  - Tasa = BADLAR + spread por rating.
   - Oferta por debajo del monto mínimo → rechazo.
 - **Veredictos**: `APROBADO` (con oferta) / `DERIVAR` (a analista) / `RECHAZADO`.
 - **Reglas como datos**: YAML versionado por segmento (`rules/pyme.v1.yaml`, `rules/monotributista.v1.yaml`). Cada evaluación guarda la versión usada.
 
 ## Manejo de errores
+Todo lo de esta sección es configurable (ver ADR 0005 y 0006):
+- Las fuentes gratuitas se consultan al inicio; las pagas, cuando una regla las necesita por primera vez.
+- Los killers se evalúan en orden, y el primero que salta rechaza.
+- Cada fuente tiene su configuración de reintentos y de reutilización de snapshots pagos (por defecto, 30 días dentro de la misma solicitud).
+- Cada regla define qué hacer ante una fuente no disponible: `continuar` (por defecto), `derivar` o `rechazar`.
 - CENDEU **404 = "sin antecedentes"**: es un dato, no un error. Lo resuelve la política.
 - 400 o dígito verificador inválido → killer "identificación inválida".
 - Timeout (10 s) o 5xx → 1 reintento, después "fuente no disponible" → `DERIVAR`.

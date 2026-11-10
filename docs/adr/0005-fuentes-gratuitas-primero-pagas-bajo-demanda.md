@@ -1,0 +1,3 @@
+# Fuentes gratuitas al inicio, fuentes pagas solo cuando una regla las necesita
+
+Al empezar una evaluación, el motor consulta todas las fuentes gratuitas. Las fuentes pagas (por ejemplo, el bureau) se consultan recién cuando una regla las necesita por primera vez. Los killers se evalúan en un orden fijo y el primero que salta corta la evaluación. Así un rechazo que se puede decidir con datos gratuitos nunca genera costo. La consecuencia es que el orden de los killers en el YAML es parte de la política (ordenar de lo más barato y más frecuente a lo más caro) y que la traza registra qué fuentes no se llegaron a consultar.
