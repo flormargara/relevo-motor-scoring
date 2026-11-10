@@ -25,6 +25,20 @@ python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 Abrir http://localhost:8000. La base queda en `data/relevo.sqlite` (cambiarla con `RELEVO_DB`). Al arrancar se cargan los casos de `config/casos_precargados.yaml` y, si existe, de `data/casos_precargados.local.yaml` (casos con CUIL de personas, fuera de git); se evalúan con **Evaluar pendientes**.
 
+## Agentes
+
+Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo y responden preguntas en la pantalla del caso. Nunca deciden: si fallan, el veredicto sale igual.
+
+Por defecto usan `claude -p` (Claude Code con tu suscripción; hace falta haber iniciado sesión con `claude`). Para usar la API de Anthropic:
+
+```bash
+.venv/bin/pip install -e '.[dev,api]'
+echo 'RELEVO_AGENTE=api' >> .env
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+```
+
+`RELEVO_AGENTE` acepta `cli` (por defecto), `api` o `ninguno`, y `RELEVO_MODELO` elige el modelo. En `ejemplos/documentos/` hay un balance y una constancia sintéticos para probar el agente documental. Los archivos subidos quedan en `data/documentos/<solicitud>/` y se borran con la solicitud.
+
 ## Correr los tests
 
 ```bash

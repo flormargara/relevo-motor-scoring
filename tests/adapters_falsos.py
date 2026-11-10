@@ -39,3 +39,19 @@ class FabricaFalsa:
         respuestas = {k: v for k, v in self.respuestas.items() if k != "documentos"}
         respuestas["documentos"] = Disponible(guardada.documentos) if guardada.documentos else SinAntecedentes()
         return {nombre: AdapterFijo(nombre, r, self.contador) for nombre, r in respuestas.items()}
+
+
+class ClaudeFalso:
+    """``ClienteClaude`` que devuelve respuestas fijas (en orden) y registra los pedidos.
+    Una respuesta que es una excepción se lanza."""
+
+    def __init__(self, *respuestas):
+        self.respuestas = list(respuestas)
+        self.pedidos: list[dict[str, Any]] = []
+
+    def completar(self, prompt, archivos=(), sistema=None):
+        self.pedidos.append({"prompt": prompt, "archivos": list(archivos), "sistema": sistema})
+        respuesta = self.respuestas.pop(0) if len(self.respuestas) > 1 else self.respuestas[0]
+        if isinstance(respuesta, Exception):
+            raise respuesta
+        return respuesta

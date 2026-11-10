@@ -46,7 +46,7 @@
 
 <section class="tarjeta">
   <h2>Nueva solicitud</h2>
-  <form method="post" action="/solicitudes" id="alta">
+  <form method="post" action="/solicitudes" id="alta" enctype="multipart/form-data" data-espera="Leyendo documentos y evaluando…">
     <div class="grilla">
       <div><label for="cuit">CUIT / CUIL</label><input id="cuit" name="cuit" required placeholder="30-12345678-9" value="{{ formulario.cuit or '' }}"></div>
       <div><label for="segmento">Segmento</label>
@@ -57,7 +57,12 @@
       <div><label for="monto">Monto solicitado ($)</label><input id="monto" name="monto" type="number" min="1" step="1" required value="{{ formulario.monto or '' }}"></div>
       <div><label for="plazo">Plazo (meses)</label><input id="plazo" name="plazo_meses" type="number" min="1" max="120" required value="{{ formulario.plazo_meses or 12 }}"></div>
     </div>
-    <p class="suave" style="margin: 16px 0 8px;">Campos de los documentos. En el paso 5 los va a extraer el agente documental; por ahora se cargan a mano.</p>
+    <div style="margin-top: 16px;">
+      <label for="archivos">Documentos: constancia de ARCA y/o balance (PDF, imagen o texto)</label>
+      <input id="archivos" name="archivos" type="file" multiple accept="{{ extensiones }}">
+      <p class="suave" style="margin: 4px 0 0; font-size: 13px;">El agente documental extrae los campos con su nivel de confianza. Tarda unos segundos por documento.</p>
+    </div>
+    <p class="suave" style="margin: 16px 0 8px;">O cargá los campos a mano (pisan lo que extraiga el agente):</p>
     <div class="grilla">
       <div data-segmento="pyme"><label for="ventas">Ventas anuales del balance ($)</label><input id="ventas" name="ventas_anuales" type="number" min="0" step="1"></div>
       <div data-segmento="monotributista"><label for="categoria">Categoría de monotributo</label>

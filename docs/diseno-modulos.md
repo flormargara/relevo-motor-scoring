@@ -80,11 +80,12 @@ El YAML también referencia los coeficientes del scorecard (`modelos/<segmento>.
 
 ```python
 extraer_documento(archivo: Path, cliente: ClienteClaude) -> DocumentoExtraido
+variables_documentos(documentos, segmento, cuit, hoy) -> dict | None
 redactar_informe(evaluacion: Evaluacion, cliente: ClienteClaude) -> str
-responder(evaluacion: Evaluacion, historial: list[Mensaje], pregunta: str, cliente: ClienteClaude) -> str
+responder(evaluacion: Evaluacion, historial: list[Turno], pregunta: str, cliente: ClienteClaude) -> str
 ```
 
-**Seam `ClienteClaude`:** `completar(prompt: str, archivos: list[Path] = []) -> str`. Tiene tres adapters: `ClaudeCLI` (`claude -p`, el default según el ADR 0004), `ClaudeAPI` y `ClaudeFalso` para los tests.
+**Seam `ClienteClaude`:** `completar(prompt: str, archivos: Sequence[Path] = (), sistema: str | None = None) -> str`. Tiene cuatro adapters: `ClaudeCLI` (`claude -p`, el default según el ADR 0004), `ClaudeAPI`, `SinAgente` (no configurado) y `ClaudeFalso` para los tests. Toda falla es `AgenteNoDisponible`.
 
 ## 5. `repositorio`
 
@@ -147,3 +148,14 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **Casos precargados**: `config/casos_precargados.yaml` (empresas, versionado) + `data/casos_precargados.local.yaml` (personas, fuera de git). Se dan de alta al arrancar pero no se evalúan solos, porque evaluar consulta en vivo.
 - **App**: FastAPI + Jinja, formularios con POST-redirect-GET y casi nada de JS. La resolución del analista solo se registra sobre la última evaluación y solo si fue `DERIVAR`; se muestra aparte y nunca reemplaza el veredicto.
 - **Documentos**: hasta el paso 5 los campos se cargan a mano en el alta (con `confianza_minima: 1`).
+
+## Decisiones tomadas al construir el paso 5
+
+- **`ClienteClaude`** suma un `sistema` opcional: en la CLI reemplaza el system prompt de Claude Code (`--system-prompt`) y en la API va como `system`. Toda falla (CLI ausente, sesión vencida, timeout, error de la API, modelo que declina) es `AgenteNoDisponible`.
+- **`ClaudeCLI`** corre `claude -p --output-format json` en `--safe-mode` (sin CLAUDE.md, hooks ni MCP del usuario), sin guardar la sesión, en un directorio neutro, y solo con la herramienta Read cuando hay archivos (`--add-dir` al directorio del archivo). Quita `ANTHROPIC_API_KEY` del entorno para usar la suscripción.
+- **`ClaudeAPI`** usa el SDK oficial (`.[api]`), `claude-opus-5-5` con esfuerzo `medium`, y `fallbacks: "default"`: si el modelo declina por seguridad, la API reintenta con otro modelo en la misma llamada. PDF e imágenes van como bloques base64; los `.txt`/`.md`, como texto.
+- **Agente documental**: identifica el tipo (`constancia_arca`, `balance`, `otro`) y devuelve cada campo con su confianza. El código valida y normaliza (CUIT a 11 dígitos, categoría A–K, fechas ISO, montos en formato argentino); un valor inválido o ausente queda *sin dato* con confianza 0. La antigüedad de la actividad se calcula en código a partir de la fecha de inicio, no la calcula el modelo.
+- **De documentos a variables**: por variable gana el valor con mayor confianza entre los documentos. `confianza_minima` es la menor entre las variables que usa el segmento (0 si falta alguna), así la derivación `documentos_baja_confianza` de las reglas cubre también los campos faltantes. Si un documento trae un CUIT distinto al de la solicitud, `cuit_coincide: false` y la confianza baja a 0.
+- **Carga manual**: es un documento más (`carga manual`, confianza 1) y por eso pisa a lo extraído. Los casos precargados siguen trayendo las variables armadas.
+- **Persistencia**: tabla `documentos` (archivo, ruta, extracción o error), en cascada con la solicitud. Los archivos quedan en `data/documentos/<solicitud>/` y `Servicio.borrar` los elimina. Si el agente falla en el alta, la solicitud se da de alta igual (sin documentos → *sin antecedentes* → deriva) y se puede **volver a extraer** desde el caso; eso no reevalúa.
+- **Informe y chat** se piden con un botón y quedan atados a una evaluación. El agente recibe la evaluación como JSON (traza, variables traducidas de cada fuente, oferta), sin las respuestas crudas. El chat se guarda solo si hubo respuesta. Se generan a pedido, no al evaluar, porque `claude -p` tarda y la evaluación no debe esperar al agente.

@@ -150,3 +150,130 @@ def test_texto_de_reglas():
     reglas, texto, metricas = armar()[0].texto_reglas("pyme")
 
     assert reglas.id == "pyme.v2" and "killers:" in texto and metricas["auc"] > 0.6
+
+
+# --- agentes ---------------------------------------------------------------
+
+import json  # noqa: E402
+
+from adapters_falsos import ClaudeFalso  # noqa: E402
+
+from relevo.clientes_claude import AgenteNoDisponible  # noqa: E402
+
+
+def balance(ventas=240_000_000, confianza=0.95, cuit=CUIT_PYME):
+    return json.dumps(
+        {
+            "tipo": "balance",
+            "campos": {
+                "cuit": {"valor": cuit, "confianza": 0.99},
+                "ventas_anuales": {"valor": ventas, "confianza": confianza},
+            },
+        }
+    )
+
+
+def con_agente(tmp_path, *respuestas):
+    servicio, fabrica = armar()
+    servicio.cliente_claude = ClaudeFalso(*respuestas)
+    servicio.directorio_documentos = tmp_path
+    return servicio
+
+
+def test_alta_con_documento_lo_extrae_y_lo_usa_el_motor(tmp_path):
+    servicio = con_agente(tmp_path, balance())
+
+    id = servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("Balance 2025.pdf", b"%PDF-1.4")])
+    evaluacion = servicio.repositorio.evaluacion(servicio.evaluar(id)).evaluacion
+
+    docs = servicio.repositorio.documentos(id)
+    assert [d.archivo for d in docs] == ["Balance 2025.pdf"]
+    assert Path(docs[0].ruta).read_bytes() == b"%PDF-1.4"
+    assert Path(docs[0].ruta).parent == tmp_path / id
+    assert docs[0].extraido["tipo"] == "balance"
+    assert servicio.repositorio.solicitud(id).documentos == {
+        "ventas_anuales": 240_000_000.0,
+        "cuit_coincide": True,
+        "confianza_minima": 0.95,
+    }
+    assert evaluacion.veredicto is Veredicto.APROBADO
+
+
+def test_baja_confianza_documental_deriva(tmp_path):
+    servicio = con_agente(tmp_path, balance(confianza=0.5))
+
+    id = servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("b.pdf", b"%PDF")])
+    evaluacion = servicio.repositorio.evaluacion(servicio.evaluar(id)).evaluacion
+
+    assert evaluacion.veredicto is Veredicto.DERIVAR
+    assert any(p.regla == "documentos_baja_confianza" and p.resultado == "salta" for p in evaluacion.traza)
+
+
+def test_agente_caido_registra_el_error_y_se_puede_reextraer(tmp_path):
+    servicio = con_agente(tmp_path, AgenteNoDisponible("Claude Code no respondió"), balance())
+
+    id = servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("b.pdf", b"%PDF")])
+
+    doc = servicio.repositorio.documentos(id)[0]
+    assert doc.error == "Claude Code no respondió" and doc.extraido is None
+    assert servicio.repositorio.solicitud(id).documentos is None  # sin documentos → sin antecedentes
+    assert servicio.repositorio.evaluacion(servicio.evaluar(id)).evaluacion.veredicto is Veredicto.DERIVAR
+
+    servicio.extraer_documentos(id)
+
+    assert servicio.repositorio.documentos(id)[0].error is None
+    assert servicio.repositorio.solicitud(id).documentos["ventas_anuales"] == 240_000_000.0
+
+
+def test_la_carga_manual_pisa_al_agente(tmp_path):
+    servicio = con_agente(tmp_path, balance(ventas=1))
+
+    id = servicio.alta(
+        CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("b.pdf", b"%PDF")], campos_manuales={"ventas_anuales": 5e8}
+    )
+
+    assert [d.archivo for d in servicio.repositorio.documentos(id)] == ["carga manual", "b.pdf"]
+    assert servicio.repositorio.solicitud(id).documentos["ventas_anuales"] == 5e8
+
+
+def test_rechaza_tipos_de_archivo_no_soportados(tmp_path):
+    servicio = con_agente(tmp_path, balance())
+
+    with pytest.raises(SolicitudInvalida):
+        servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("macro.xlsm", b"x")])
+    assert servicio.repositorio.bandeja() == []
+
+
+def test_borrar_elimina_los_archivos(tmp_path):
+    servicio = con_agente(tmp_path, balance())
+    id = servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, archivos=[("../../b.pdf", b"%PDF")])
+    assert (tmp_path / id / "01-b.pdf").is_file()  # el nombre no escapa del directorio
+
+    servicio.borrar(id)
+
+    assert not (tmp_path / id).exists()
+    assert not servicio.repositorio.existe_solicitud(id)
+
+
+def test_informe_y_chat(tmp_path):
+    servicio = con_agente(tmp_path, "RESUMEN\n- Aprobado.", "Por el rating A.")
+    evaluacion_id = servicio.evaluar(servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, DOCUMENTOS_PYME))
+
+    assert servicio.generar_informe(evaluacion_id) == "RESUMEN\n- Aprobado."
+    assert servicio.preguntar(evaluacion_id, "  ¿Por qué?  ") == "Por el rating A."
+
+    assert servicio.repositorio.informe(evaluacion_id) == "RESUMEN\n- Aprobado."
+    chat = servicio.repositorio.chat(evaluacion_id)
+    assert [(m.rol, m.texto) for m in chat] == [("analista", "¿Por qué?"), ("agente", "Por el rating A.")]
+
+
+def test_sin_agente_el_informe_falla_sin_guardar_nada():
+    servicio, _ = armar()  # sin cliente: SinAgente
+    evaluacion_id = servicio.evaluar(servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, DOCUMENTOS_PYME))
+
+    with pytest.raises(AgenteNoDisponible):
+        servicio.generar_informe(evaluacion_id)
+    with pytest.raises(AgenteNoDisponible):
+        servicio.preguntar(evaluacion_id, "¿Por qué?")
+    assert servicio.repositorio.informe(evaluacion_id) is None
+    assert servicio.repositorio.chat(evaluacion_id) == []

@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% set seccion = "bandeja" %}
 {% set s = guardada.solicitud %}
-{% block titulo %}{{ (actual and actual.denominacion) or s.cuit }}{% endblock %}
+{% set nombre = ficha.nombre or s.cuit %}
+{% block titulo %}{{ nombre }}{% endblock %}
 
 {% macro detalle(d) -%}
   {%- set partes = [] -%}
@@ -21,8 +22,8 @@
 <p class="suave" style="margin: 0 0 4px;"><a href="/">← Bandeja</a></p>
 <div class="acciones" style="justify-content: space-between; align-items: flex-start;">
   <div>
-    <h1>{{ (actual and actual.denominacion) or s.cuit }}</h1>
-    <p class="sub"><code>{{ s.cuit }}</code> · {{ "PyME" if s.segmento == "pyme" else "Monotributista" }}
+    <h1>{{ nombre }}</h1>
+    <p class="sub"><code>{{ s.cuit | cuit }}</code> · {{ "PyME" if s.segmento == "pyme" else "Monotributista" }}
       · pide {{ s.monto | pesos }} a {{ s.plazo_meses }} meses
       {% if guardada.origen == "precargado" %} · precargado{% endif %}</p>
   </div>
@@ -31,6 +32,8 @@
     <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/borrar" onsubmit="return confirm('¿Borrar la solicitud y todas sus evaluaciones?')"><button class="peligro">Borrar</button></form>
   </div>
 </div>
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 
 {% if not actual %}
 <section class="tarjeta"><p class="suave">Todavía no se evaluó. La evaluación consulta las fuentes en vivo.</p></section>
@@ -85,30 +88,101 @@
 </section>
 {% endif %}
 
-<section class="tarjeta">
-  <h2>Informe de riesgo</h2>
-  {% if informe %}<div style="white-space: pre-wrap;">{{ informe }}</div>
-  {% else %}<p class="suave">El agente de informe se agrega en el paso 5. El veredicto no depende de él.</p>{% endif %}
+<section class="tarjeta" id="informe">
+  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <h2 style="margin: 0;">Informe de riesgo</h2>
+    <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/informe" data-espera="Redactando…">
+      <input type="hidden" name="evaluacion_id" value="{{ actual.id }}">
+      <button>{{ "Regenerar informe" if informe else "Generar informe" }}</button>
+    </form>
+  </div>
+
+  <div class="ficha">
+    <h3>Solicitante</h3>
+    <dl>
+    {% for d in ficha.datos %}
+      <div><dt>{{ d.etiqueta }}</dt><dd>{{ d.valor }}{% if d.nota %}<span class="nota">{{ d.nota }}</span>{% endif %}</dd></div>
+    {% endfor %}
+    </dl>
+  </div>
+
+  {% if secciones %}
+  <div class="informe">
+    {% for sec in secciones %}
+    <div class="seccion {{ 'resumen' if loop.first and sec.titulo and sec.titulo.lower() == 'resumen' }}">
+      {% if sec.titulo %}<h3>{{ sec.titulo }}</h3>{% endif %}
+      {% for tipo, contenido in sec.bloques %}
+        {% if tipo == "ul" %}<ul>{% for item in contenido %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% else %}<p>{{ contenido }}</p>{% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="suave" style="margin: 8px 0 0; font-size: 13px;">Lo redactó el agente de informe. Explica el veredicto; no lo decide ni lo cambia.</p>
+  {% else %}<p class="suave" style="margin: 12px 0 0;">Todavía no hay informe. El agente tarda unos segundos; el veredicto no depende de él.</p>{% endif %}
 </section>
 
-<section class="tarjeta">
+<section class="tarjeta" id="chat">
+  <h2>Preguntas al agente</h2>
+  {% for m in chat %}
+    <div class="mensaje {{ m.rol }}"><div class="suave">{{ "Analista" if m.rol == "analista" else "Agente" }} · {{ m.creado_en | fecha }}</div>{{ m.texto }}</div>
+  {% else %}
+    <p class="suave">Preguntale al agente sobre esta evaluación: por qué saltó una regla, qué pesa en el scorecard, qué conviene pedir.</p>
+  {% endfor %}
+  <form method="post" action="/solicitudes/{{ guardada.id }}/chat" data-espera="Pensando…" style="margin-top: 12px;">
+    <input type="hidden" name="evaluacion_id" value="{{ actual.id }}">
+    <textarea name="pregunta" rows="2" required placeholder="¿Por qué se derivó?"></textarea>
+    <div style="margin-top: 8px;"><button class="primario">Preguntar</button></div>
+  </form>
+</section>
+
+<section class="tarjeta" id="traza">
   <h2>Traza</h2>
+  <p class="suave" style="margin-top: -6px;">Cómo llegó el motor al veredicto, etapa por etapa. Tocá una regla para ver sus valores.</p>
+  <ol class="flujo">
+  {% for etapa in flujo %}
+    <li class="etapa estado-{{ etapa.estado }}">
+      <div class="nodo">{{ loop.index }}</div>
+      <div class="cuerpo">
+      <div class="cabeza"><strong>{{ etapa.nombre }}</strong><span class="resumen-etapa">{{ etapa.resumen }}</span></div>
+      {% if etapa.items and etapa.clave not in ("rating", "veredicto") %}
+      <ul class="reglas">
+      {% for item in etapa.items %}
+        <li>
+          <details>
+            <summary title="{{ item.descripcion }}"><span class="punto {{ item.resultado | replace(' ', '-') | replace('(', '') | replace(')', '') }}"></span><span class="regla">{{ item.regla | replace("_", " ") }}</span><span class="res">{{ item.resultado }}</span></summary>
+            <div class="det">
+              {% if item.descripcion %}<div>{{ item.descripcion }}</div>{% endif %}
+              <div class="suave">{{ detalle(item.paso.detalle) }}</div>
+            </div>
+          </details>
+        </li>
+      {% endfor %}
+      </ul>
+      {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ol>
+  <details style="margin-top: 14px;">
+    <summary>Ver la traza como tabla</summary>
   <table>
-    <thead><tr><th>Etapa</th><th>Regla</th><th>Resultado</th><th>Detalle</th></tr></thead>
-    <tbody>
-    {% for paso in e.traza %}
-      <tr>
-        <td class="suave">{{ paso.etapa }}</td>
-        <td><code>{{ paso.regla }}</code></td>
-        <td><span class="chip {{ paso.resultado | replace(' ', '-') }}">{{ paso.resultado }}</span></td>
-        <td>{{ detalle(paso.detalle) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% if e.fuentes_no_consultadas %}
-  <p class="suave" style="margin-bottom: 0;">No se consultaron (la evaluación ya estaba decidida): {{ e.fuentes_no_consultadas | join(", ") }}.</p>
-  {% endif %}
+      <thead><tr><th>Etapa</th><th>Regla</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody>
+      {% for paso in e.traza %}
+        <tr>
+          <td class="suave">{{ paso.etapa }}</td>
+          <td><code>{{ paso.regla }}</code></td>
+          <td><span class="chip {{ paso.resultado | replace(' ', '-') }}">{{ paso.resultado }}</span></td>
+          <td>{{ detalle(paso.detalle) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if e.fuentes_no_consultadas %}
+    <p class="suave" style="margin-bottom: 0;">No se consultaron (la evaluación ya estaba decidida): {{ e.fuentes_no_consultadas | join(", ") }}.</p>
+    {% endif %}
+  </details>
 </section>
 
 <section class="tarjeta">
@@ -137,11 +211,38 @@
 </section>
 {% endif %}
 
-<section class="tarjeta">
-  <h2>Documentos</h2>
+<section class="tarjeta" id="documentos">
+  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 8px;">
+    <h2 style="margin: 0;">Documentos</h2>
+    {% if documentos | selectattr("ruta") | list %}
+    <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/documentos/extraer" data-espera="Extrayendo…"><button>Volver a extraer</button></form>
+    {% endif %}
+  </div>
+  {% for doc in documentos %}
+  <div class="documento">
+    <div><strong>{{ doc.archivo }}</strong>
+      {% if doc.extraido %}<span class="chip">{{ doc.extraido.tipo | replace("_", " ") }}</span>{% endif %}
+      {% if doc.error %}<span class="chip no-disponible">no se pudo extraer</span>{% endif %}</div>
+    {% if doc.error %}<p class="suave" style="margin: 4px 0 0;">{{ doc.error }}</p>{% endif %}
+    {% if doc.extraido %}
+    <table style="margin-top: 6px;">
+      <thead><tr><th>Campo</th><th>Valor</th><th class="num">Confianza</th></tr></thead>
+      <tbody>
+      {% for nombre, campo in doc.extraido.campos.items() %}
+        <tr><td>{{ nombre | replace("_", " ") }}</td>
+          <td>{% if nombre == "ventas_anuales" %}{{ campo.valor | pesos }}{% else %}{{ campo.valor | numero }}{% endif %}</td>
+          <td class="num"><span class="chip {{ 'ok' if campo.confianza >= 0.8 else 'sin-dato' }}">{{ campo.confianza | porcentaje(0) }}</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if doc.extraido.observaciones %}<p class="suave" style="margin: 6px 0 0;">{{ doc.extraido.observaciones }}</p>{% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+  <h3>Variables para el motor <span class="suave" style="font-weight: normal;">(fuente <code>documentos</code>)</span></h3>
   {% if guardada.documentos %}
   <dl class="kv">{% for k, v in guardada.documentos.items() %}<dt>{{ k | replace("_", " ") }}</dt><dd>{{ v | numero }}</dd>{% endfor %}</dl>
-  {% else %}<p class="suave">Sin documentos cargados.</p>{% endif %}
+  {% else %}<p class="suave" style="margin-bottom: 0;">Sin documentos: la fuente queda <em>sin antecedentes</em>.</p>{% endif %}
 </section>
 
 {% if historial | length > 1 %}

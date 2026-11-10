@@ -1,9 +1,10 @@
-"""App web: Bandeja, Caso y Reglas, con fuentes falsas."""
+"""App web: Bandeja, Caso y Reglas, con fuentes y agente falsos."""
 
+import json
 import re
 
 import pytest
-from adapters_falsos import FabricaFalsa
+from adapters_falsos import ClaudeFalso, FabricaFalsa
 from fastapi.testclient import TestClient
 
 from conftest import BASE_PYME, CUIL_MONOTRIBUTISTA, CUIT_PYME
@@ -17,20 +18,22 @@ FUENTES_PYME = {k: v for k, v in BASE_PYME.items() if k != "documentos"}
 
 
 @pytest.fixture
-def cliente():
-    def armar(**cambios):
+def cliente(tmp_path):
+    def armar(agente=None, **cambios):
         servicio = Servicio(
             Repositorio(),
             adapters=FabricaFalsa(FUENTES_PYME, **cambios),
             config_fuentes=cargar_config_fuentes(),
             dormir=lambda s: None,
+            cliente_claude=agente,
+            directorio_documentos=tmp_path,
         )
         return TestClient(crear_app(servicio)), servicio
 
     return armar
 
 
-def alta(cliente, **campos):
+def alta(cliente, files=None, **campos):
     datos = {
         "cuit": CUIT_PYME,
         "segmento": "pyme",
@@ -38,7 +41,7 @@ def alta(cliente, **campos):
         "plazo_meses": "12",
         "ventas_anuales": "240000000",
     } | campos
-    return cliente.post("/solicitudes", data=datos, follow_redirects=False)
+    return cliente.post("/solicitudes", data=datos, files=files, follow_redirects=False)
 
 
 def test_bandeja_vacia(cliente):
@@ -163,3 +166,90 @@ def test_formato_argentino():
     assert pesos(204438.35, 2) == "$ 204.438,35"
     assert porcentaje(0.0439) == "4,39 %"
     assert re.fullmatch(r"—", pesos(None))
+
+
+# --- agentes ---------------------------------------------------------------
+
+BALANCE = json.dumps(
+    {
+        "tipo": "balance",
+        "campos": {
+            "cuit": {"valor": CUIT_PYME, "confianza": 0.99},
+            "ventas_anuales": {"valor": "240.000.000", "confianza": 0.93},
+        },
+        "observaciones": "Expresado en pesos.",
+    }
+)
+
+
+def test_alta_con_documento_muestra_lo_extraido(cliente):
+    http, servicio = cliente(agente=ClaudeFalso(BALANCE))
+
+    respuesta = alta(http, ventas_anuales="", files={"archivos": ("balance.pdf", b"%PDF-1.4", "application/pdf")})
+    caso = http.get(respuesta.headers["location"])
+
+    assert respuesta.status_code == 303
+    assert "balance.pdf" in caso.text and "Expresado en pesos." in caso.text
+    assert "$ 240.000.000" in caso.text and "93 %" in caso.text
+    assert "APROBADO" in caso.text
+
+
+def test_alta_sin_archivos_sigue_funcionando_con_carga_manual(cliente):
+    http, servicio = cliente()
+
+    caso = http.get(alta(http).headers["location"])
+
+    assert "carga manual" in caso.text and "APROBADO" in caso.text
+
+
+def test_informe_y_chat_desde_el_caso(cliente):
+    http, servicio = cliente(agente=ClaudeFalso("RESUMEN\n- Se aprueba con rating A.", "Por el score de bureau."))
+    caso_url = alta(http).headers["location"]
+    id = caso_url.rsplit("/", 1)[1]
+    evaluacion_id = servicio.repositorio.ultima_evaluacion(id).id
+
+    assert "Generar informe" in http.get(caso_url).text
+    respuesta = http.post(f"{caso_url}/informe", data={"evaluacion_id": evaluacion_id}, follow_redirects=False)
+    assert respuesta.status_code == 303
+    http.post(f"{caso_url}/chat", data={"evaluacion_id": evaluacion_id, "pregunta": "¿Qué pesó más?"})
+
+    caso = http.get(caso_url).text
+    assert "Se aprueba con rating A." in caso and "Regenerar informe" in caso
+    assert "¿Qué pesó más?" in caso and "Por el score de bureau." in caso
+
+
+def test_agente_no_disponible_muestra_aviso_y_el_veredicto_sigue(cliente):
+    http, _ = cliente()  # sin agente configurado
+    caso_url = alta(http).headers["location"]
+    id = caso_url.rsplit("/", 1)[1]
+
+    caso = http.post(f"{caso_url}/informe", data={"evaluacion_id": 1})
+
+    assert "No se pudo generar el informe" in caso.text and "no hay agente configurado" in caso.text
+    assert "APROBADO" in caso.text
+    assert id in caso.url.path
+
+
+def test_informe_de_evaluacion_ajena_es_404(cliente):
+    http, servicio = cliente(agente=ClaudeFalso("x"))
+    primero = alta(http).headers["location"]
+    alta(http, cuit="30500010912")
+
+    otra = servicio.repositorio.bandeja()[0].evaluacion_id
+    respuesta = http.post(f"{primero}/informe", data={"evaluacion_id": otra})
+
+    assert respuesta.status_code == 404
+
+
+def test_reextraer_documentos(cliente):
+    from relevo.clientes_claude import AgenteNoDisponible
+
+    http, servicio = cliente(agente=ClaudeFalso(AgenteNoDisponible("sin sesión de Claude Code"), BALANCE))
+    caso_url = alta(http, ventas_anuales="", files={"archivos": ("b.pdf", b"%PDF", "application/pdf")}).headers[
+        "location"
+    ]
+    assert "sin sesión de Claude Code" in http.get(caso_url).text
+
+    caso = http.post(f"{caso_url}/documentos/extraer")
+
+    assert "Reevaluá" in caso.text and "$ 240.000.000" in caso.text
