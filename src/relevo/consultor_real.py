@@ -201,7 +201,10 @@ def adapters_por_defecto(
     juguete: Mapping[str, Any] | None = None,
     igj: Path | None = None,
     hoy: Callable[[], date] = date.today,
+    arca: Path | None = None,
 ) -> dict[str, AdapterFuente]:
+    from relevo.fuentes.arca import SNAPSHOT_POR_DEFECTO as SNAPSHOT_ARCA
+    from relevo.fuentes.arca import Arca
     from relevo.fuentes.badlar import Badlar
     from relevo.fuentes.cendeu import Cendeu, Cheques
     from relevo.fuentes.documentos import Documentos
@@ -214,6 +217,7 @@ def adapters_por_defecto(
         Cheques(cliente),
         Badlar(cliente, hoy=hoy),
         Igj(igj or SNAPSHOT_POR_DEFECTO, hoy=hoy),
+        Arca(arca or SNAPSHOT_ARCA),
         Bureau(datos_juguete),
         Identidad(datos_juguete, hoy=hoy),
         Propios(datos_juguete),

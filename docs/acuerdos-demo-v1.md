@@ -19,7 +19,8 @@ Préstamo de capital de trabajo, cuotas fijas (sistema francés).
 | Bureau comercial | Juguete | Score de bureau |
 | Identidad (tipo RENAPER) | Juguete | Validación de identidad |
 | Datos propios de la entidad | Juguete | Lista negra, historial |
-| ARCA padrón (con certificado WSAA) | **Fase 2** | — |
+| ARCA padrón público (archivo de condición tributaria) | Snapshot precargado | Condición ante Ganancias e IVA, categoría de monotributo, empleador |
+| ARCA web services (con certificado WSAA) | **Fase 2** | Fecha de inicio y actividades |
 
 Cada fuente es un conector intercambiable detrás de una misma interfaz.
 
@@ -78,8 +79,14 @@ Se puede borrar una evaluación. Los CUIL de personas humanas se consultan solo 
 ## Casos precargados
 Empresas grandes con datos públicos en CENDEU, consultadas en vivo, más un CUIL con consentimiento para el caso monotributista.
 
+## Pendientes
+- **Cómo entra ARCA al motor.** La fuente `arca` (padrón público) ya está registrada, pero ninguna regla la usa, así que no se consulta. Opción elegida: reglas v3 y ficha.
+  - Reglas v3 de cada segmento: tomar `arca.categoria_monotributo` para la capacidad de pago y usar `arca.inscripcion_vigente`, por ejemplo para rechazar o derivar sin inscripción vigente. Los umbrales y el comportamiento son una decisión de riesgo.
+  - Ficha del solicitante: mostrar la condición ante Ganancias e IVA, la categoría de monotributo y la fecha del padrón.
+
 ## Fuera de alcance (fase 2)
 - Simulador de políticas y backtesting.
 - Cobranzas.
 - Integración real con Jira o Salesforce.
-- ARCA con certificado.
+- ARCA con certificado (fecha de inicio y actividades).
+- RENAPER (fecha de nacimiento real desde datos.gob.ar) para reemplazar identidad mock.

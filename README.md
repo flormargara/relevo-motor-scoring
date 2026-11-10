@@ -61,6 +61,17 @@ IGJ se consulta desde un snapshot local que se arma una vez a partir del ZIP sem
 
 Sin el snapshot, la fuente IGJ queda *no disponible* y las evaluaciones PyME se derivan.
 
+## Snapshot de ARCA
+
+La condición tributaria (Ganancias, IVA, categoría de monotributo, empleador) sale del padrón público de ARCA, que se descarga sin autenticación desde [afip.gob.ar](https://www.afip.gob.ar/genericos/cInscripcion/archivoCompleto.asp) ("Archivo condición tributaria con denominación", unos 86 MB, 6,2 millones de CUIT). Se arma en unos 10 segundos y ocupa unos 300 MB:
+
+```bash
+curl -L -o data/arca/padron.zip https://www.afip.gob.ar/genericos/cInscripcion/archivos/apellidoNombreDenominacion.zip
+.venv/bin/python -m relevo.fuentes.arca data/arca/padron.zip data/arca.sqlite
+```
+
+ARCA actualiza el archivo periódicamente; la fecha del padrón queda en la variable `arca.fecha_padron`. Sin el snapshot, la fuente queda *no disponible*.
+
 ## Scorecards
 
 Los modelos se entrenan sobre una cartera sintética (ver `src/relevo/sintetico.py`):

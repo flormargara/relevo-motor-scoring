@@ -12,6 +12,7 @@ cendeu:     {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
 cheques:    {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
 badlar:     {costo: gratuita, timeout: 10, reintentos: 1, espera: 1, alcance: global, si_falla_usar_ultimo: true}
 igj:        {costo: gratuita, reintentos: 0}
+arca:       {costo: gratuita, reintentos: 0}
 propios:    {costo: gratuita, reintentos: 0}
 identidad:  {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
 documentos: {costo: gratuita, reintentos: 0}
