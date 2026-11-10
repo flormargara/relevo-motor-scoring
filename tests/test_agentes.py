@@ -49,6 +49,7 @@ def test_extrae_un_balance(tmp_path):
     assert doc.campos["ventas_anuales"] == CampoExtraido(240_000_000.0, 0.9)
     assert doc.observaciones == "En pesos."
     assert cliente.pedidos[0]["archivos"] == [archivo]
+    assert "No compares el CUIT con el nombre del archivo" in cliente.pedidos[0]["sistema"]
 
 
 def test_tolera_texto_alrededor_del_json(tmp_path):
@@ -180,6 +181,7 @@ def test_el_informe_recibe_la_evaluacion_completa(evaluacion):
     assert '"veredicto": "APROBADO"' in pedido["prompt"]
     assert "lista_negra" in pedido["prompt"]  # la traza
     assert "no lo cambiás" in pedido["sistema"]
+    assert "puntos están incluidos en el total" in pedido["sistema"]
     assert pedido["archivos"] == []
 
 

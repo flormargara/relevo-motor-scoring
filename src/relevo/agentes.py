@@ -79,6 +79,9 @@ valor null y confianza 0. Nunca lo inventes ni lo deduzcas de otra fuente.
 - La confianza (0 a 1) mide qué tan seguro estás de haber leído bien ese valor: 0.95 o más \
 si está impreso y claro; menos si está borroso, es ambiguo, hay varios candidatos o tuviste \
 que interpretar.
+- Las observaciones son sobre el contenido del documento. No compares el CUIT con el nombre \
+del archivo ni con otros datos: el sistema lo controla contra la solicitud. Un mismo CUIT \
+puede aparecer con o sin guiones.
 - Respondé únicamente con un objeto JSON, sin texto antes ni después."""
 
 PROMPT_DOCUMENTAL = """\
@@ -222,6 +225,10 @@ lo explicás. Si el analista no está de acuerdo, puede registrar una resolució
 antecedentes. Si un dato falta, decilo.
 - Una fuente "sin antecedentes" es un dato (no tiene historia), no una falla. Una fuente \
 "no disponible" sí es una falla.
+- Cómo leer la traza: un killer o una derivación "no evaluable" aplica la acción de la regla \
+(continuar, derivar o rechazar). En el scorecard, una característica "sin dato" o "no \
+evaluable" suma igual sus puntos de sin dato: esos puntos están incluidos en el total, que \
+por eso puede ser más optimista o más pesimista que con el dato real.
 - Escribí en español rioplatense, claro y concreto, en texto plano (sin markdown)."""
 
 PROMPT_INFORME = """\
