@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% set seccion = "bandeja" %}
 {% set s = guardada.solicitud %}
-{% block titulo %}{{ (actual and actual.denominacion) or s.cuit }}{% endblock %}
+{% set nombre = ficha.nombre or s.cuit %}
+{% block titulo %}{{ nombre }}{% endblock %}
 
 {% macro detalle(d) -%}
   {%- set partes = [] -%}
@@ -21,8 +22,8 @@
 <p class="suave" style="margin: 0 0 4px;"><a href="/">← Bandeja</a></p>
 <div class="acciones" style="justify-content: space-between; align-items: flex-start;">
   <div>
-    <h1>{{ (actual and actual.denominacion) or s.cuit }}</h1>
-    <p class="sub"><code>{{ s.cuit }}</code> · {{ "PyME" if s.segmento == "pyme" else "Monotributista" }}
+    <h1>{{ nombre }}</h1>
+    <p class="sub"><code>{{ s.cuit | cuit }}</code> · {{ "PyME" if s.segmento == "pyme" else "Monotributista" }}
       · pide {{ s.monto | pesos }} a {{ s.plazo_meses }} meses
       {% if guardada.origen == "precargado" %} · precargado{% endif %}</p>
   </div>
@@ -88,16 +89,37 @@
 {% endif %}
 
 <section class="tarjeta" id="informe">
-  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 8px;">
+  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
     <h2 style="margin: 0;">Informe de riesgo</h2>
     <form class="inline" method="post" action="/solicitudes/{{ guardada.id }}/informe" data-espera="Redactando…">
       <input type="hidden" name="evaluacion_id" value="{{ actual.id }}">
       <button>{{ "Regenerar informe" if informe else "Generar informe" }}</button>
     </form>
   </div>
-  {% if informe %}<div class="informe">{{ informe }}</div>
-  <p class="suave" style="margin-bottom: 0;">Lo redactó el agente de informe. Explica el veredicto; no lo decide ni lo cambia.</p>
-  {% else %}<p class="suave" style="margin-bottom: 0;">Todavía no hay informe. El agente tarda unos segundos; el veredicto no depende de él.</p>{% endif %}
+
+  <div class="ficha">
+    <h3>Solicitante</h3>
+    <dl>
+    {% for d in ficha.datos %}
+      <div><dt>{{ d.etiqueta }}</dt><dd>{{ d.valor }}{% if d.nota %}<span class="nota">{{ d.nota }}</span>{% endif %}</dd></div>
+    {% endfor %}
+    </dl>
+  </div>
+
+  {% if secciones %}
+  <div class="informe">
+    {% for sec in secciones %}
+    <div class="seccion {{ 'resumen' if loop.first and sec.titulo and sec.titulo.lower() == 'resumen' }}">
+      {% if sec.titulo %}<h3>{{ sec.titulo }}</h3>{% endif %}
+      {% for tipo, contenido in sec.bloques %}
+        {% if tipo == "ul" %}<ul>{% for item in contenido %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% else %}<p>{{ contenido }}</p>{% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="suave" style="margin: 8px 0 0; font-size: 13px;">Lo redactó el agente de informe. Explica el veredicto; no lo decide ni lo cambia.</p>
+  {% else %}<p class="suave" style="margin: 12px 0 0;">Todavía no hay informe. El agente tarda unos segundos; el veredicto no depende de él.</p>{% endif %}
 </section>
 
 <section class="tarjeta" id="chat">
@@ -114,24 +136,53 @@
   </form>
 </section>
 
-<section class="tarjeta">
+<section class="tarjeta" id="traza">
   <h2>Traza</h2>
+  <p class="suave" style="margin-top: -6px;">Cómo llegó el motor al veredicto, etapa por etapa. Tocá una regla para ver sus valores.</p>
+  <ol class="flujo">
+  {% for etapa in flujo %}
+    <li class="etapa estado-{{ etapa.estado }}">
+      <div class="nodo">{{ loop.index }}</div>
+      <div class="cuerpo">
+      <div class="cabeza"><strong>{{ etapa.nombre }}</strong><span class="resumen-etapa">{{ etapa.resumen }}</span></div>
+      {% if etapa.items and etapa.clave not in ("rating", "veredicto") %}
+      <ul class="reglas">
+      {% for item in etapa.items %}
+        <li>
+          <details>
+            <summary title="{{ item.descripcion }}"><span class="punto {{ item.resultado | replace(' ', '-') | replace('(', '') | replace(')', '') }}"></span><span class="regla">{{ item.regla | replace("_", " ") }}</span><span class="res">{{ item.resultado }}</span></summary>
+            <div class="det">
+              {% if item.descripcion %}<div>{{ item.descripcion }}</div>{% endif %}
+              <div class="suave">{{ detalle(item.paso.detalle) }}</div>
+            </div>
+          </details>
+        </li>
+      {% endfor %}
+      </ul>
+      {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ol>
+  <details style="margin-top: 14px;">
+    <summary>Ver la traza como tabla</summary>
   <table>
-    <thead><tr><th>Etapa</th><th>Regla</th><th>Resultado</th><th>Detalle</th></tr></thead>
-    <tbody>
-    {% for paso in e.traza %}
-      <tr>
-        <td class="suave">{{ paso.etapa }}</td>
-        <td><code>{{ paso.regla }}</code></td>
-        <td><span class="chip {{ paso.resultado | replace(' ', '-') }}">{{ paso.resultado }}</span></td>
-        <td>{{ detalle(paso.detalle) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% if e.fuentes_no_consultadas %}
-  <p class="suave" style="margin-bottom: 0;">No se consultaron (la evaluación ya estaba decidida): {{ e.fuentes_no_consultadas | join(", ") }}.</p>
-  {% endif %}
+      <thead><tr><th>Etapa</th><th>Regla</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody>
+      {% for paso in e.traza %}
+        <tr>
+          <td class="suave">{{ paso.etapa }}</td>
+          <td><code>{{ paso.regla }}</code></td>
+          <td><span class="chip {{ paso.resultado | replace(' ', '-') }}">{{ paso.resultado }}</span></td>
+          <td>{{ detalle(paso.detalle) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if e.fuentes_no_consultadas %}
+    <p class="suave" style="margin-bottom: 0;">No se consultaron (la evaluación ya estaba decidida): {{ e.fuentes_no_consultadas | join(", ") }}.</p>
+    {% endif %}
+  </details>
 </section>
 
 <section class="tarjeta">

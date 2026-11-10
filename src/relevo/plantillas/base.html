@@ -49,7 +49,38 @@
   .acciones { display: flex; gap: 8px; flex-wrap: wrap; }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
   h3 { font-size: 14px; margin: 16px 0 8px; }
-  .informe { white-space: pre-wrap; background: var(--gris-f); padding: 14px; border-radius: 8px; margin-bottom: 8px; }
+  .ficha { background: var(--gris-f); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+  .ficha h3 { margin: 0 0 8px; }
+  .ficha dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px 20px; margin: 0; }
+  .ficha dt { font-size: 12px; color: var(--suave); }
+  .ficha dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ficha .nota { display: block; font-weight: 400; font-size: 12px; color: var(--suave); }
+  .informe .seccion { padding: 4px 0 8px; border-top: 1px solid var(--borde); }
+  .informe .seccion:first-child { border-top: 0; }
+  .informe .seccion.resumen { background: #eef3fd; border: 0; border-radius: 8px; padding: 4px 14px 8px; margin-bottom: 8px; }
+  .informe h3 { text-transform: none; margin: 10px 0 6px; }
+  .informe ul { margin: 0; padding-left: 20px; } .informe li { margin-bottom: 4px; } .informe p { margin: 6px 0; }
+  .flujo { list-style: none; padding: 0; margin: 0; }
+  .etapa { position: relative; display: grid; grid-template-columns: 32px 1fr; column-gap: 12px; padding-bottom: 14px; }
+  .etapa:not(:last-child)::before { content: ""; position: absolute; left: 15px; top: 30px; bottom: 0; width: 2px; background: var(--borde); }
+  .etapa .nodo { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; background: var(--verde-f); color: var(--verde); border: 2px solid var(--verde); position: relative; z-index: 1; }
+  .etapa.estado-alerta .nodo { background: var(--ambar-f); color: var(--ambar); border-color: var(--ambar); }
+  .etapa.estado-corta .nodo { background: var(--rojo-f); color: var(--rojo); border-color: var(--rojo); }
+  .etapa.estado-no-alcanzada .nodo { background: var(--gris-f); color: var(--suave); border-color: var(--borde); }
+  .etapa.estado-no-alcanzada .cuerpo { opacity: .6; }
+  .etapa .cabeza { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-height: 32px; padding-top: 5px; }
+  .resumen-etapa { font-size: 13px; font-weight: 600; }
+  .etapa.estado-ok .resumen-etapa { color: var(--verde); } .etapa.estado-alerta .resumen-etapa { color: var(--ambar); } .etapa.estado-corta .resumen-etapa { color: var(--rojo); } .etapa.estado-no-alcanzada .resumen-etapa { color: var(--suave); font-weight: 400; }
+  .reglas { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; }
+  .reglas li { border: 1px solid var(--borde); border-radius: 6px; background: var(--superficie); min-width: 0; }
+  .reglas summary { display: flex; gap: 8px; align-items: center; padding: 5px 8px; color: var(--texto); list-style: none; }
+  .reglas summary::-webkit-details-marker { display: none; }
+  .reglas .regla { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .reglas .res { color: var(--suave); font-size: 12px; white-space: nowrap; }
+  .reglas .det { padding: 0 8px 8px 24px; font-size: 12px; overflow-wrap: anywhere; }
+  .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--verde); }
+  .punto.no-evaluable, .punto.sin-dato, .punto.sin-antecedentes, .punto.deriva, .punto.disponible-desactualizada { background: var(--ambar); }
+  .punto.salta, .punto.no-disponible, .punto.rechaza, .punto.debajo-del-mínimo, .punto.no-calculable { background: var(--rojo); }
   .mensaje { white-space: pre-wrap; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; background: var(--gris-f); }
   .mensaje.analista { background: #e9effc; margin-left: 15%; }
   .mensaje .suave { font-size: 12px; white-space: normal; }

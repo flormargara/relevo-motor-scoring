@@ -8,7 +8,6 @@ guarda y muestra. Correr con:
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Annotated, Any
@@ -18,56 +17,23 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from relevo import presentacion
 from relevo.clientes_claude import AgenteNoDisponible, cliente_desde_entorno
-from relevo.consultor import Disponible, NoDisponible, SinAntecedentes
+from relevo.presentacion import a_json, cuit_con_guiones, fecha, numero, pesos, porcentaje, tipo_resultado
 from relevo.repositorio import EvaluacionGuardada, Repositorio, SolicitudInexistente
 from relevo.servicio import EXTENSIONES_DOCUMENTO, RAIZ, SEGMENTOS, Servicio, SolicitudInvalida
 
 PLANTILLAS = Jinja2Templates(directory=Path(__file__).parent / "plantillas")
 
 
-# --- formato ----------------------------------------------------------------
-
-
-def _miles(numero: float, decimales: int = 0) -> str:
-    texto = f"{numero:,.{decimales}f}"
-    return texto.replace(",", "§").replace(".", ",").replace("§", ".")
-
-
-def pesos(valor: Any, decimales: int = 0) -> str:
-    return "—" if valor is None else f"$ {_miles(float(valor), decimales)}"
-
-
-def porcentaje(valor: Any, decimales: int = 2) -> str:
-    return "—" if valor is None else f"{_miles(float(valor) * 100, decimales)} %"
-
-
-def numero(valor: Any) -> str:
-    if isinstance(valor, bool) or valor is None:
-        return {True: "sí", False: "no", None: "—"}[valor]
-    if isinstance(valor, float):
-        return _miles(valor, 0 if valor.is_integer() else (2 if abs(valor) >= 1 else 4))
-    if isinstance(valor, int):
-        return _miles(valor)
-    return str(valor)
-
-
-def fecha(valor: Any) -> str:
-    return valor.strftime("%d/%m/%Y %H:%M") if valor else "—"
-
-
-def tipo_resultado(resultado: Any) -> str:
-    return {Disponible: "disponible", SinAntecedentes: "sin antecedentes", NoDisponible: "no disponible"}[
-        type(resultado)
-    ]
-
-
-def a_json(valor: Any) -> str:
-    return json.dumps(valor, ensure_ascii=False, indent=2, default=str)
-
-
 PLANTILLAS.env.filters.update(
-    pesos=pesos, porcentaje=porcentaje, numero=numero, fecha=fecha, tipo_resultado=tipo_resultado, a_json=a_json
+    pesos=pesos,
+    porcentaje=porcentaje,
+    numero=numero,
+    fecha=fecha,
+    tipo_resultado=tipo_resultado,
+    a_json=a_json,
+    cuit=cuit_con_guiones,
 )
 
 
@@ -155,17 +121,31 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
         actual = next((e for e in historial if e.id == evaluacion), historial[0] if historial else None)
         if evaluacion is not None and (actual is None or actual.id != evaluacion):
             raise HTTPException(404, "esa evaluación no es de esta solicitud")
+        documentos = repo.documentos(id)
+        s = guardada.solicitud
+        ficha = presentacion.ficha_solicitante(
+            s.cuit,
+            s.segmento,
+            s.monto,
+            s.plazo_meses,
+            actual.evaluacion if actual else None,
+            [d.extraido for d in documentos if d.extraido],
+        )
+        informe = repo.informe(actual.id) if actual else None
         return pagina(
             request,
             "caso.html",
+            ficha=ficha,
+            flujo=presentacion.flujo(actual.evaluacion, _reglas_de(servicio, actual.evaluacion)) if actual else [],
+            secciones=presentacion.secciones_informe(informe) if informe else [],
             guardada=guardada,
             actual=actual,
             historial=historial,
             es_ultima=bool(historial) and actual is historial[0],
             resolucion=repo.resolucion(actual.id) if actual else None,
-            informe=repo.informe(actual.id) if actual else None,
+            informe=informe,
             chat=repo.chat(actual.id) if actual else [],
-            documentos=repo.documentos(id),
+            documentos=documentos,
             aviso=aviso,
         )
 
@@ -238,6 +218,15 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
         )
 
     return app
+
+
+def _reglas_de(servicio: Servicio, evaluacion) -> Any:
+    """Las reglas con las que se hizo la evaluación, para mostrar las descripciones. Si ya no están, None."""
+    try:
+        segmento, version = evaluacion.version_reglas.rsplit(".v", 1)
+        return servicio.reglas(segmento, int(version))
+    except (ValueError, OSError, LookupError):
+        return None
 
 
 def _existe(repo: Repositorio, id: str) -> None:
