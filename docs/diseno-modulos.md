@@ -128,3 +128,13 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **IGJ** es un snapshot SQLite (`data/igj.sqlite`, no versionado) armado desde el ZIP semestral de datos.jus.gob.ar. Limitaciones: solo sociedades de CABA (otras jurisdicciones → *sin antecedentes*), y no publica la fecha de constitución, así que la antigüedad se aproxima con el primer balance o asamblea registrados (cota inferior; ~74 % de los CUIT no tiene ninguno → *sin dato*).
 - **Cheques rechazados**: no encontramos un CUIT grande con cheques rechazados; el fixture `sintetico_cheques.json` sigue el esquema documentado y hay que reemplazarlo por una respuesta real.
 - **`ConsultorReal`**: precarga en paralelo las fuentes gratuitas que usan las reglas; las pagas se consultan solo cuando el motor las pide. La configuración técnica está en `config/fuentes.yaml`. Los snapshots entre evaluaciones viven detrás del seam `AlmacenSnapshots` (hoy en memoria; en el paso 4, SQLite).
+
+## Decisiones tomadas al construir el paso 3
+
+- **Población de entrenamiento = solicitantes que ya pasaron los killers**, que es la que el scorecard ve en producción. Incluye los mismos faltantes que producen los adapters: CENDEU sin antecedentes (12 % PyME, 20 % monotributistas, algo más riesgosos), IGJ sin dato (65 %) y bureau caído (4 %).
+- **Proceso generador**: un factor latente de riesgo, que el modelo no ve, mueve a la vez las características y el default a 12 meses. En monotributistas, la edad tiene además un efecto propio (más riesgo antes de los 25).
+- **Tramos fijos definidos por dominio** (no optimizados), así los puntos son monótonos y explicables. El faltante es un tramo más y sus puntos son los `sin_dato`; si una característica no tiene faltantes en la cartera, `sin_dato` vale lo mismo que WoE 0 (neutro).
+- **WoE → regresión logística → puntos** con la escala 600 puntos = odds 50:1, PDO 20. Los puntos se redondean a enteros.
+- **Versionado**: el modelo entrenado es `v2` (`rules/<segmento>.v2.yaml` → `modelos/<segmento>.v2.json`) y la `v1` provisional queda para reproducir evaluaciones viejas. Los tests del motor usan la `v1` a propósito, porque prueban el motor y no un modelo. Un test verifica que los JSON versionados se regeneran idénticos con su semilla.
+- **Métricas en validación** (30 %, guardadas en el JSON): PyME AUC 0,74 / KS 0,37; monotributistas AUC 0,73 / KS 0,35. El default observado por rating coincide con la PD media y crece de A a E.
+- **Es una cartera sintética**: los puntos sirven para la demo, no para decidir créditos reales.

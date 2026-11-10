@@ -82,8 +82,9 @@ def test_ypf_pasa_los_killers_aunque_tenga_situacion_5_inmaterial(snapshot_igj):
     )
 
     assert evaluacion.veredicto is Veredicto.APROBADO
-    assert evaluacion.rating == "C"  # pierde puntos por la situación 5 y las 33 entidades
-    assert evaluacion.oferta.tasa_nominal_anual == 21.5 + 15  # BADLAR real del fixture + spread C
+    assert evaluacion.version_reglas == "pyme.v2"
+    assert evaluacion.rating == "B"  # pierde puntos por la situación 5 inmaterial
+    assert evaluacion.oferta.tasa_nominal_anual == 21.5 + 10  # BADLAR real del fixture + spread B
     assert {s.fuente for s in evaluacion.snapshots} == {
         "cendeu",
         "cheques",

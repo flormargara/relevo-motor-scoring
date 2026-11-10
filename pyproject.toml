@@ -7,6 +7,7 @@ dependencies = ["pyyaml>=6", "httpx>=0.27"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+sintetico = ["numpy>=1.26", "pandas>=2.2", "scikit-learn>=1.5"]
 
 [build-system]
 requires = ["setuptools>=68"]

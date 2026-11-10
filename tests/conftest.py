@@ -80,11 +80,13 @@ def cuota_francesa(monto: float, tna_porcentaje: float, plazo: int) -> float:
     return round(monto * i / (1 - (1 + i) ** -plazo), 2)
 
 
+# Los tests del motor usan la v1 a propósito: sus puntos son simples y conocidos, y lo
+# que se prueba es el comportamiento del motor, no un modelo en particular.
 @pytest.fixture(scope="session")
 def reglas_pyme():
-    return cargar_reglas("pyme")
+    return cargar_reglas("pyme", version=1)
 
 
 @pytest.fixture(scope="session")
 def reglas_monotributista():
-    return cargar_reglas("monotributista")
+    return cargar_reglas("monotributista", version=1)

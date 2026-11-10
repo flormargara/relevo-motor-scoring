@@ -38,3 +38,13 @@ IGJ se consulta desde un snapshot local que se arma una vez a partir del ZIP sem
 ```
 
 Sin el snapshot, la fuente IGJ queda *no disponible* y las evaluaciones PyME se derivan.
+
+## Scorecards
+
+Los modelos se entrenan sobre una cartera sintética (ver `src/relevo/sintetico.py`):
+
+```bash
+.venv/bin/pip install -e '.[dev,sintetico]'
+.venv/bin/python -m relevo.sintetico pyme --version 2
+.venv/bin/python -m relevo.sintetico monotributista --version 2
+```
