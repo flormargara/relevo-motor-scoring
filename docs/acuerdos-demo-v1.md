@@ -19,7 +19,8 @@ Préstamo de capital de trabajo, cuotas fijas (sistema francés).
 | Bureau comercial | Juguete | Score de bureau |
 | Identidad (tipo RENAPER) | Juguete | Validación de identidad |
 | Datos propios de la entidad | Juguete | Lista negra, historial |
-| ARCA padrón (con certificado WSAA) | **Fase 2** | — |
+| ARCA padrón público (archivo de condición tributaria) | Snapshot precargado | Condición ante Ganancias e IVA, categoría de monotributo, empleador |
+| ARCA web services (con certificado WSAA) | **Fase 2** | Fecha de inicio y actividades |
 
 Cada fuente es un conector intercambiable detrás de una misma interfaz.
 
