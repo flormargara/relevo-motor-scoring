@@ -1,0 +1,179 @@
+{
+  "segmento": "pyme",
+  "version": 2,
+  "provisional": false,
+  "nota": "Entrenado sobre una cartera SINTÉTICA. Sirve para la demo, no para decidir créditos reales.",
+  "generado_con": "python -m relevo.sintetico pyme --version 2 --semilla 2026",
+  "escala": {
+    "puntos_base": 600,
+    "odds_base": 50,
+    "pdo": 20
+  },
+  "caracteristicas": [
+    {
+      "nombre": "peor_situacion_12m",
+      "expresion": "cendeu.peor_situacion_12m",
+      "tramos": [
+        {
+          "hasta": 0,
+          "puntos": 140
+        },
+        {
+          "hasta": 1,
+          "puntos": 120
+        },
+        {
+          "hasta": 2,
+          "puntos": 101
+        },
+        {
+          "puntos": 88
+        }
+      ],
+      "sin_dato": 109,
+      "coeficiente": -0.5659
+    },
+    {
+      "nombre": "entidades_con_deuda",
+      "expresion": "cendeu.entidades_con_deuda",
+      "tramos": [
+        {
+          "hasta": 1,
+          "puntos": 118
+        },
+        {
+          "hasta": 3,
+          "puntos": 115
+        },
+        {
+          "hasta": 5,
+          "puntos": 112
+        },
+        {
+          "puntos": 108
+        }
+      ],
+      "sin_dato": 111,
+      "coeficiente": -0.2958
+    },
+    {
+      "nombre": "antiguedad_anios",
+      "expresion": "igj.antiguedad_anios",
+      "tramos": [
+        {
+          "hasta": 3,
+          "puntos": 105
+        },
+        {
+          "hasta": 7,
+          "puntos": 112
+        },
+        {
+          "hasta": 15,
+          "puntos": 119
+        },
+        {
+          "puntos": 121
+        }
+      ],
+      "sin_dato": 114,
+      "coeficiente": -0.4982
+    },
+    {
+      "nombre": "score_bureau",
+      "expresion": "bureau.score",
+      "tramos": [
+        {
+          "hasta": 450,
+          "puntos": 89
+        },
+        {
+          "hasta": 550,
+          "puntos": 104
+        },
+        {
+          "hasta": 650,
+          "puntos": 115
+        },
+        {
+          "hasta": 750,
+          "puntos": 124
+        },
+        {
+          "puntos": 140
+        }
+      ],
+      "sin_dato": 111,
+      "coeficiente": -0.6218
+    },
+    {
+      "nombre": "endeudamiento_sobre_ventas",
+      "expresion": "cendeu.deuda_total / documentos.ventas_anuales",
+      "tramos": [
+        {
+          "hasta": 0.05,
+          "puntos": 133
+        },
+        {
+          "hasta": 0.15,
+          "puntos": 120
+        },
+        {
+          "hasta": 0.3,
+          "puntos": 113
+        },
+        {
+          "hasta": 0.5,
+          "puntos": 108
+        },
+        {
+          "puntos": 104
+        }
+      ],
+      "sin_dato": 110,
+      "coeficiente": -0.4291
+    }
+  ],
+  "metricas": {
+    "filas_validacion": 12104,
+    "tasa_default_validacion": 0.055,
+    "pd_media_validacion": 0.0547,
+    "auc": 0.7412,
+    "gini": 0.4825,
+    "ks": 0.3702,
+    "por_rating": [
+      {
+        "rating": "A",
+        "participacion": 0.221,
+        "pd_media": 0.0121,
+        "default_observado": 0.012
+      },
+      {
+        "rating": "B",
+        "participacion": 0.3879,
+        "pd_media": 0.0339,
+        "default_observado": 0.0315
+      },
+      {
+        "rating": "C",
+        "participacion": 0.2498,
+        "pd_media": 0.0688,
+        "default_observado": 0.0711
+      },
+      {
+        "rating": "D",
+        "participacion": 0.116,
+        "pd_media": 0.1315,
+        "default_observado": 0.1396
+      },
+      {
+        "rating": "E",
+        "participacion": 0.0254,
+        "pd_media": 0.2541,
+        "default_observado": 0.2443
+      }
+    ],
+    "filas_entrenamiento": 27896,
+    "tasa_default_entrenamiento": 0.0544
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "segmento": "monotributista",
+  "version": 2,
+  "provisional": false,
+  "nota": "Entrenado sobre una cartera SINTÉTICA. Sirve para la demo, no para decidir créditos reales.",
+  "generado_con": "python -m relevo.sintetico monotributista --version 2 --semilla 2026",
+  "escala": {
+    "puntos_base": 600,
+    "odds_base": 50,
+    "pdo": 20
+  },
+  "caracteristicas": [
+    {
+      "nombre": "peor_situacion_12m",
+      "expresion": "cendeu.peor_situacion_12m",
+      "tramos": [
+        {
+          "hasta": 0,
+          "puntos": 142
+        },
+        {
+          "hasta": 1,
+          "puntos": 117
+        },
+        {
+          "hasta": 2,
+          "puntos": 99
+        },
+        {
+          "puntos": 81
+        }
+      ],
+      "sin_dato": 107,
+      "coeficiente": -0.6389
+    },
+    {
+      "nombre": "entidades_con_deuda",
+      "expresion": "cendeu.entidades_con_deuda",
+      "tramos": [
+        {
+          "hasta": 1,
+          "puntos": 116
+        },
+        {
+          "hasta": 2,
+          "puntos": 112
+        },
+        {
+          "hasta": 4,
+          "puntos": 108
+        },
+        {
+          "puntos": 102
+        }
+      ],
+      "sin_dato": 109,
+      "coeficiente": -0.417
+    },
+    {
+      "nombre": "score_bureau",
+      "expresion": "bureau.score",
+      "tramos": [
+        {
+          "hasta": 450,
+          "puntos": 86
+        },
+        {
+          "hasta": 550,
+          "puntos": 100
+        },
+        {
+          "hasta": 650,
+          "puntos": 112
+        },
+        {
+          "hasta": 750,
+          "puntos": 124
+        },
+        {
+          "puntos": 138
+        }
+      ],
+      "sin_dato": 109,
+      "coeficiente": -0.6845
+    },
+    {
+      "nombre": "antiguedad_actividad_anios",
+      "expresion": "documentos.antiguedad_actividad_anios",
+      "tramos": [
+        {
+          "hasta": 2,
+          "puntos": 103
+        },
+        {
+          "hasta": 5,
+          "puntos": 110
+        },
+        {
+          "hasta": 10,
+          "puntos": 115
+        },
+        {
+          "puntos": 120
+        }
+      ],
+      "sin_dato": 112,
+      "coeficiente": -0.5714
+    },
+    {
+      "nombre": "edad",
+      "expresion": "identidad.edad",
+      "tramos": [
+        {
+          "hasta": 25,
+          "puntos": 99
+        },
+        {
+          "hasta": 35,
+          "puntos": 115
+        },
+        {
+          "hasta": 55,
+          "puntos": 113
+        },
+        {
+          "hasta": 65,
+          "puntos": 112
+        },
+        {
+          "puntos": 112
+        }
+      ],
+      "sin_dato": 112,
+      "coeficiente": -1.1112
+    }
+  ],
+  "metricas": {
+    "filas_validacion": 12104,
+    "tasa_default_validacion": 0.0794,
+    "pd_media_validacion": 0.0795,
+    "auc": 0.7259,
+    "gini": 0.4518,
+    "ks": 0.3505,
+    "por_rating": [
+      {
+        "rating": "A",
+        "participacion": 0.1043,
+        "pd_media": 0.013,
+        "default_observado": 0.0111
+      },
+      {
+        "rating": "B",
+        "participacion": 0.2822,
+        "pd_media": 0.0352,
+        "default_observado": 0.0395
+      },
+      {
+        "rating": "C",
+        "participacion": 0.362,
+        "pd_media": 0.0715,
+        "default_observado": 0.0628
+      },
+      {
+        "rating": "D",
+        "participacion": 0.1884,
+        "pd_media": 0.1356,
+        "default_observado": 0.1491
+      },
+      {
+        "rating": "E",
+        "participacion": 0.0631,
+        "pd_media": 0.2661,
+        "default_observado": 0.2579
+      }
+    ],
+    "filas_entrenamiento": 27896,
+    "tasa_default_entrenamiento": 0.0804
+  }
+}

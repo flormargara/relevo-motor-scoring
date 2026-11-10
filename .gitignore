@@ -6,3 +6,5 @@ data/
 .streamlit/secrets.toml
 .env
 .DS_Store
+*.egg-info/
+.ruff_cache/

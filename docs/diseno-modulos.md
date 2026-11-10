@@ -105,3 +105,45 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 3. `sintetico`: entrenar el scorecard y reemplazar los coeficientes provisionales.
 4. `repositorio` + `app`.
 5. `agentes` (CLI, después API).
+
+## Decisiones tomadas al construir el paso 1
+
+- **`solicitud` es una pseudo-fuente** que resuelve el propio motor: `solicitud.cuit_valido` (prefijo + dígito verificador), `solicitud.tipo_persona` (`humana` / `juridica`), `monto`, `plazo_meses`. Así el killer de identificación inválida se escribe en el YAML como cualquier otro y no consulta nada.
+- **Los cheques rechazados son una fuente aparte (`cheques`)**, aunque vengan del mismo servicio que CENDEU. Cada endpoint del BCRA responde 404 por su cuenta, y mezclarlos rompía la semántica de *sin antecedentes* (ADR 0003).
+- **Semántica de los datos faltantes** dentro de una condición:
+  - fuente *sin antecedentes*, o variable con valor `null` → **sin dato**: el killer o la derivación no salta, y en el scorecard se usan los puntos `sin_dato` de la característica;
+  - fuente *no disponible*, variable ausente o tipo de dato inesperado → **no evaluable**: se aplica `si_no_disponible` de la regla (ADR 0006);
+  - `fuente.sin_antecedentes` siempre se puede preguntar, y vale `true` o `false`.
+- **Derivaciones**: sección propia del YAML. No cortan: marcan la evaluación y siguen, así un rechazo posterior (rating E, monto mínimo) gana por precedencia. Si nada rechaza, la oferta calculada queda como propuesta para el analista.
+- **Scorecard**: escala estándar (`puntos_base`, `odds_base`, `pdo`), tramos por característica (`hasta` inclusive, o `valor` exacto) y puntos `sin_dato`. Una característica puede ser una expresión (`cendeu.deuda_total / documentos.ventas_anuales`). Los modelos `v1` están marcados `provisional: true` hasta el paso 3.
+- **Política sin datos** (BADLAR caída, sin balance, categoría desconocida) → `DERIVAR` sin oferta (o `RECHAZADO` si `politica.si_no_disponible: rechazar`).
+
+## Decisiones tomadas al construir el paso 2
+
+- **Adapters de fuente** (`src/relevo/fuentes/`): `consultar` trae el crudo (lo que se guarda como snapshot) y `traducir` es una función pura, testeada contra respuestas reales del BCRA en `tests/fixtures/bcra/`. Un timeout, 5xx o error de red es `FuenteCaida` (se reintenta); un 4xx es una respuesta válida.
+- **CENDEU** combina `/Deudas` y `/Deudas/Historicas`. Los montos llegan en **miles de pesos** y se exponen en pesos. En la histórica, situación `0` = sin deuda ese mes (se ignora). Variables: `peor_situacion_12m`, `peor_situacion_actual`, `deuda_irregular_12m` (mayor deuda en situación ≥ 3 de un mes), `proporcion_irregular_12m`, `entidades_con_deuda`, `deuda_total`, `en_proceso_judicial`, `identificacion_rechazada` (HTTP 400).
+- **Materialidad en el killer de situación BCRA** (datos reales: YPF figura en situación 5 por $86.000 con Telepeaje, sobre más de $1 billón de deuda). El killer pide situación ≥ 3 **y** deuda irregular ≥ $500.000 o ≥ 5 % de la deuda del mes. Los umbrales están en el YAML y son una decisión de riesgo a validar.
+- **El 400 de CENDEU** es un killer propio (`identificacion_rechazada_por_bcra`), así el killer de identificación inválida no consulta ninguna fuente.
+- **BADLAR** se publica con unos días de demora: se consulta una ventana de 30 días y se toma el último valor. Si cae, se usa el último guardado con `desactualizada: true` (queda en la traza).
+- **IGJ** es un snapshot SQLite (`data/igj.sqlite`, no versionado) armado desde el ZIP semestral de datos.jus.gob.ar. Limitaciones: solo sociedades de CABA (otras jurisdicciones → *sin antecedentes*), y no publica la fecha de constitución, así que la antigüedad se aproxima con el primer balance o asamblea registrados (cota inferior; ~74 % de los CUIT no tiene ninguno → *sin dato*).
+- **Cheques rechazados**: no encontramos un CUIT grande con cheques rechazados; el fixture `sintetico_cheques.json` sigue el esquema documentado y hay que reemplazarlo por una respuesta real.
+- **`ConsultorReal`**: precarga en paralelo las fuentes gratuitas que usan las reglas; las pagas se consultan solo cuando el motor las pide. La configuración técnica está en `config/fuentes.yaml`. Los snapshots entre evaluaciones viven detrás del seam `AlmacenSnapshots` (hoy en memoria; en el paso 4, SQLite).
+
+## Decisiones tomadas al construir el paso 3
+
+- **Población de entrenamiento = solicitantes que ya pasaron los killers**, que es la que el scorecard ve en producción. Incluye los mismos faltantes que producen los adapters: CENDEU sin antecedentes (12 % PyME, 20 % monotributistas, algo más riesgosos), IGJ sin dato (65 %) y bureau caído (4 %).
+- **Proceso generador**: un factor latente de riesgo, que el modelo no ve, mueve a la vez las características y el default a 12 meses. En monotributistas, la edad tiene además un efecto propio (más riesgo antes de los 25).
+- **Tramos fijos definidos por dominio** (no optimizados), así los puntos son monótonos y explicables. El faltante es un tramo más y sus puntos son los `sin_dato`; si una característica no tiene faltantes en la cartera, `sin_dato` vale lo mismo que WoE 0 (neutro).
+- **WoE → regresión logística → puntos** con la escala 600 puntos = odds 50:1, PDO 20. Los puntos se redondean a enteros.
+- **Versionado**: el modelo entrenado es `v2` (`rules/<segmento>.v2.yaml` → `modelos/<segmento>.v2.json`) y la `v1` provisional queda para reproducir evaluaciones viejas. Los tests del motor usan la `v1` a propósito, porque prueban el motor y no un modelo. Un test verifica que los JSON versionados se regeneran idénticos con su semilla.
+- **Métricas en validación** (30 %, guardadas en el JSON): PyME AUC 0,74 / KS 0,37; monotributistas AUC 0,73 / KS 0,35. El default observado por rating coincide con la PD media y crece de A a E.
+- **Es una cartera sintética**: los puntos sirven para la demo, no para decidir créditos reales.
+
+## Decisiones tomadas al construir el paso 4
+
+- **`repositorio`**: SQLite con solicitudes, evaluaciones (traza, motivos, oferta, versión de reglas), snapshots (crudo + resultado traducido + origen e intentos), informes, chat y resoluciones. Borrar una solicitud borra todo en cascada. Una evaluación guardada se reconstruye idéntica y se puede **reproducir**: misma solicitud + mismas reglas + sus snapshots → mismo veredicto y misma traza (hay un test).
+- **`AlmacenSqlite`** implementa `AlmacenSnapshots` sobre la tabla de snapshots: el bureau se reutiliza entre evaluaciones de la misma solicitud y BADLAR cae al último valor real de cualquier evaluación. Nunca reutiliza un valor que ya era de respaldo.
+- **`servicio`** concentra los casos de uso (alta, evaluar, precargados), así la app queda delgada. El alta de un CUIL de persona humana **exige consentimiento** (Ley 25.326). Un CUIT mal formado se acepta y lo rechaza el motor, para que quede en la traza.
+- **Casos precargados**: `config/casos_precargados.yaml` (empresas, versionado) + `data/casos_precargados.local.yaml` (personas, fuera de git). Se dan de alta al arrancar pero no se evalúan solos, porque evaluar consulta en vivo.
+- **App**: FastAPI + Jinja, formularios con POST-redirect-GET y casi nada de JS. La resolución del analista solo se registra sobre la última evaluación y solo si fue `DERIVAR`; se muestra aparte y nunca reemplaza el veredicto.
+- **Documentos**: hasta el paso 5 los campos se cargan a mano en el alta (con `confianza_minima: 1`).

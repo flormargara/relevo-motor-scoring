@@ -1,0 +1,22 @@
+# Casos precargados de la bandeja de la demo. Se consultan EN VIVO contra el BCRA.
+# Los `documentos` son SINTÉTICOS (coherentes con el caso) hasta cargar los reales.
+#
+# Acá van solo empresas con datos públicos. Los casos con CUIL de personas van en
+# data/casos_precargados.local.yaml (mismo formato, fuera de git: data/ está en
+# .gitignore) y se suman a estos al cargar la bandeja.
+
+pyme:
+  - cuit: "30546689979"   # YPF: situación 5 inmaterial (Telepeaje) → pasa killers
+    monto: 50000000
+    plazo_meses: 24
+    documentos: {ventas_anuales: 25000000000000, confianza_minima: 0.95}
+  - cuit: "30500959629"   # Vicentin: situación 5 material → RECHAZADO
+    monto: 50000000
+    plazo_meses: 24
+    documentos: {ventas_anuales: 1000000000000, confianza_minima: 0.95}
+  - cuit: "30500010912"   # Banco Nación: deudor sano, fuera de IGJ
+    monto: 50000000
+    plazo_meses: 24
+    documentos: {ventas_anuales: 5000000000000, confianza_minima: 0.95}
+
+monotributista: []

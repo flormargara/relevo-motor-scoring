@@ -1,0 +1,20 @@
+# Datos de las fuentes de juguete (bureau, identidad, datos propios).
+# Un CUIT que no figura acá recibe valores deterministas derivados del CUIT.
+# `caidas`: CUIT para los que la fuente simula no responder (para mostrar reintentos y DERIVAR).
+# No poner datos de personas reales.
+
+bureau:
+  casos:
+    "30546689979": {score: 880}   # YPF
+    "30500010912": {score: 910}   # Banco Nación
+    "30500959629": {score: 320}   # Vicentin
+  caidas: []
+
+identidad:
+  casos: {}
+  caidas: []
+
+propios:
+  lista_negra: []
+  casos: {}
+  caidas: []

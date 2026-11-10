@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set seccion = "reglas" %}
+{% block titulo %}Reglas{% endblock %}
+{% block contenido %}
+<h1>Reglas</h1>
+<p class="sub">Reglas vigentes por segmento (solo lectura). Cada evaluación guarda la versión que usó.</p>
+<div class="acciones" style="margin-bottom: 16px;">
+  {% for seg in segmentos %}
+  <a class="boton {{ 'chip' if seg == segmento }}" href="/reglas?segmento={{ seg }}">{{ "PyME" if seg == "pyme" else "Monotributista" }}</a>
+  {% endfor %}
+</div>
+
+<section class="tarjeta">
+  <h2><code>{{ reglas.id }}</code></h2>
+  <div class="grilla">
+    <dl class="kv">
+      <dt>Killers</dt><dd>{{ reglas.killers | length }}</dd>
+      <dt>Derivaciones</dt><dd>{{ reglas.derivaciones | length }}</dd>
+      <dt>Scorecard</dt><dd><code>{{ reglas.scorecard.modelo }}</code>{% if reglas.scorecard.provisional %} (provisional){% endif %}</dd>
+      <dt>Fuentes</dt><dd>{{ reglas.fuentes | join(", ") }}</dd>
+    </dl>
+    {% if metricas %}
+    <dl class="kv">
+      <dt>AUC</dt><dd>{{ metricas.auc | numero }}</dd>
+      <dt>Gini</dt><dd>{{ metricas.gini | numero }}</dd>
+      <dt>KS</dt><dd>{{ metricas.ks | numero }}</dd>
+      <dt>Default (validación)</dt><dd>{{ metricas.tasa_default_validacion | porcentaje }}</dd>
+    </dl>
+    {% endif %}
+  </div>
+  {% if metricas %}
+  <table style="margin-top: 16px;">
+    <thead><tr><th>Rating</th><th class="num">Participación</th><th class="num">PD media</th><th class="num">Default observado</th></tr></thead>
+    <tbody>{% for r in metricas.por_rating %}
+      <tr><td>{{ r.rating }}</td><td class="num">{{ r.participacion | porcentaje(1) }}</td><td class="num">{{ r.pd_media | porcentaje }}</td><td class="num">{{ r.default_observado | porcentaje }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="suave" style="margin-bottom: 0;">Métricas sobre la muestra de validación de una cartera sintética.</p>
+  {% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>YAML</h2>
+  <pre>{{ texto }}</pre>
+</section>
+{% endblock %}
