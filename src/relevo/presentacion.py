@@ -123,10 +123,21 @@ def ficha_solicitante(
             datos.append(Dato("Cierre del ejercicio", _fecha_iso(campos_doc["fecha_cierre_ejercicio"]), "balance"))
         datos.append(_desde_fuente("Antigüedad de la sociedad", fuentes, "igj", "antiguedad_anios", _anios))
     else:
-        datos.append(_desde_documentos("Categoría de monotributo", campos_doc, "categoria_monotributo", str))
+        # Usar categoría de ARCA si está disponible, sino de documentos
+        dato_categoria = _desde_fuente("Categoría de monotributo", fuentes, "arca", "categoria_monotributo", str)
+        if dato_categoria.valor == "—":
+            dato_categoria = _desde_documentos("Categoría de monotributo", campos_doc, "categoria_monotributo", str)
+        datos.append(dato_categoria)
         if campos_doc.get("fecha_inicio_actividades"):
-            datos.append(Dato("Inicio de actividades", _fecha_iso(campos_doc["fecha_inicio_actividades"]), "ARCA"))
+            datos.append(Dato("Inicio de actividades", _fecha_iso(campos_doc["fecha_inicio_actividades"]), "documentos"))
         datos.append(_desde_fuente("Edad", fuentes, "identidad", "edad", lambda v: f"{numero(v)} años"))
+
+    # Datos de ARCA para ambos segmentos
+    datos += [
+        _desde_fuente("Condición ante Ganancias", fuentes, "arca", "ganancias", str),
+        _desde_fuente("Condición ante IVA", fuentes, "arca", "iva", str),
+        _desde_fuente("Fecha del padrón ARCA", fuentes, "arca", "fecha_padron", str),
+    ]
     datos += [
         _desde_fuente("Peor situación BCRA (12 meses)", fuentes, "cendeu", "peor_situacion_12m", numero),
         _desde_fuente("Deuda en el sistema", fuentes, "cendeu", "deuda_total", pesos),
