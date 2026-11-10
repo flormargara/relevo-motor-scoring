@@ -83,4 +83,5 @@ Empresas grandes con datos públicos en CENDEU, consultadas en vivo, más un CUI
 - Simulador de políticas y backtesting.
 - Cobranzas.
 - Integración real con Jira o Salesforce.
-- ARCA con certificado.
+- ARCA con certificado (fecha de inicio y actividades).
+- RENAPER (fecha de nacimiento real desde datos.gob.ar) para reemplazar identidad mock.
