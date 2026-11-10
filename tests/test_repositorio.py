@@ -90,11 +90,12 @@ def test_borrar_solicitud_borra_todo(repo, reglas_pyme):
     evaluacion_id = repo.guardar_evaluacion(id, evaluar(solicitud_pyme(), reglas_pyme, armar_consultor(BASE_PYME)))
     repo.guardar_informe(evaluacion_id, "informe")
     repo.agregar_mensaje(evaluacion_id, "analista", "¿por qué?")
+    repo.guardar_documento(id, "balance.pdf", "/tmp/balance.pdf", {"tipo": "balance"})
 
     repo.borrar_solicitud(id)
 
     assert repo.bandeja() == []
-    for tabla in ("evaluaciones", "snapshots", "informes", "chat"):
+    for tabla in ("documentos", "evaluaciones", "snapshots", "informes", "chat"):
         assert repo._ejecutar(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0] == 0
 
 
@@ -150,3 +151,19 @@ def test_almacen_no_reusa_valores_que_ya_eran_de_respaldo(repo, reglas_pyme):
     guardar_con(repo, reglas_pyme, a, real, respaldo)
 
     assert AlmacenSqlite(repo).ultimo("badlar", "*") == real
+
+
+def test_documentos_de_la_solicitud(repo):
+    id = repo.crear_solicitud(solicitud_pyme())
+
+    doc_id = repo.guardar_documento(id, "balance.pdf", "/d/balance.pdf", None, "agente caído")
+    repo.guardar_documento(id, "carga manual", None, {"tipo": "manual", "campos": {}})
+    repo.actualizar_documento(doc_id, {"tipo": "balance", "campos": {}}, None)
+    repo.actualizar_documentos(id, {"ventas_anuales": 1.0, "confianza_minima": 1.0})
+
+    docs = repo.documentos(id)
+    assert [(d.archivo, d.ruta, d.extraido["tipo"], d.error) for d in docs] == [
+        ("balance.pdf", "/d/balance.pdf", "balance", None),
+        ("carga manual", None, "manual", None),
+    ]
+    assert repo.solicitud(id).documentos == {"ventas_anuales": 1.0, "confianza_minima": 1.0}

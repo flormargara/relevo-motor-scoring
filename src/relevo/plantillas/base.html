@@ -48,6 +48,13 @@
   details summary { cursor: pointer; color: var(--acento); }
   .acciones { display: flex; gap: 8px; flex-wrap: wrap; }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  h3 { font-size: 14px; margin: 16px 0 8px; }
+  .informe { white-space: pre-wrap; background: var(--gris-f); padding: 14px; border-radius: 8px; margin-bottom: 8px; }
+  .mensaje { white-space: pre-wrap; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; background: var(--gris-f); }
+  .mensaje.analista { background: #e9effc; margin-left: 15%; }
+  .mensaje .suave { font-size: 12px; white-space: normal; }
+  .documento { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  button:disabled { opacity: .6; cursor: progress; }
   .kv dt { color: var(--suave); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -60,6 +67,15 @@
 <main class="contenido">
 {% block contenido %}{% endblock %}
 </main>
+<script>
+  // los agentes tardan: deshabilita el botón y avisa mientras espera
+  document.querySelectorAll("form[data-espera]").forEach((form) => {
+    form.addEventListener("submit", () => {
+      const boton = form.querySelector("button");
+      if (boton) { boton.disabled = true; boton.textContent = form.dataset.espera; }
+    });
+  });
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

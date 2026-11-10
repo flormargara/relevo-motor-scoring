@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 CREATE INDEX IF NOT EXISTS snapshots_por_fuente ON snapshots (fuente, solicitud_id, consultado_en);
 
+CREATE TABLE IF NOT EXISTS documentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    solicitud_id TEXT NOT NULL REFERENCES solicitudes(id) ON DELETE CASCADE,
+    archivo TEXT NOT NULL,       -- nombre original, o "carga manual"
+    ruta TEXT,                   -- dónde quedó guardado (NULL para la carga manual)
+    extraido TEXT,               -- JSON del DocumentoExtraido, o NULL si falló
+    error TEXT,                  -- por qué no se pudo extraer
+    creado_en TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS informes (
     evaluacion_id INTEGER PRIMARY KEY REFERENCES evaluaciones(id) ON DELETE CASCADE,
     texto TEXT NOT NULL,
@@ -138,6 +148,16 @@ class Mensaje:
     creado_en: datetime
 
 
+@dataclass(frozen=True)
+class DocumentoGuardado:
+    id: int
+    archivo: str
+    ruta: str | None
+    extraido: dict[str, Any] | None
+    error: str | None
+    creado_en: datetime
+
+
 class SolicitudInexistente(LookupError):
     pass
 
@@ -193,8 +213,52 @@ class Repositorio:
             raise SolicitudInexistente(id)
         return _solicitud(fila)
 
+    def actualizar_documentos(self, id: str, documentos: dict[str, Any] | None) -> None:
+        """Reemplaza las variables de la fuente ``documentos`` de la solicitud."""
+        self._ejecutar(
+            "UPDATE solicitudes SET documentos = ? WHERE id = ?", (_json(documentos) if documentos else None, id)
+        )
+
+    def guardar_documento(
+        self,
+        solicitud_id: str,
+        archivo: str,
+        ruta: str | None,
+        extraido: dict[str, Any] | None,
+        error: str | None = None,
+    ) -> int:
+        cursor = self._ejecutar(
+            "INSERT INTO documentos (solicitud_id, archivo, ruta, extraido, error, creado_en) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (solicitud_id, archivo, ruta, _json(extraido) if extraido else None, error, datetime.now().isoformat()),
+        )
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
+
+    def actualizar_documento(self, documento_id: int, extraido: dict[str, Any] | None, error: str | None) -> None:
+        self._ejecutar(
+            "UPDATE documentos SET extraido = ?, error = ? WHERE id = ?",
+            (_json(extraido) if extraido else None, error, documento_id),
+        )
+
+    def documentos(self, solicitud_id: str) -> list[DocumentoGuardado]:
+        filas = self._ejecutar(
+            "SELECT * FROM documentos WHERE solicitud_id = ? ORDER BY id", (solicitud_id,)
+        ).fetchall()
+        return [
+            DocumentoGuardado(
+                f["id"],
+                f["archivo"],
+                f["ruta"],
+                json.loads(f["extraido"]) if f["extraido"] else None,
+                f["error"],
+                datetime.fromisoformat(f["creado_en"]),
+            )
+            for f in filas
+        ]
+
     def borrar_solicitud(self, id: str) -> None:
-        """Borra la solicitud y todo lo asociado (evaluaciones, snapshots, informes, chat)."""
+        """Borra la solicitud y todo lo asociado (documentos, evaluaciones, snapshots, informes, chat)."""
         self._ejecutar("DELETE FROM solicitudes WHERE id = ?", (id,))
 
     def bandeja(self) -> list[FilaBandeja]:

@@ -1,0 +1,32 @@
+DOCUMENTO SINTÉTICO DE EJEMPLO — NO CORRESPONDE A UNA EMPRESA REAL
+
+METALÚRGICA DEL SUR S.A.
+CUIT: 30-71234567-1
+Domicilio legal: Av. Siempreviva 742, Ciudad Autónoma de Buenos Aires
+
+ESTADOS CONTABLES AL 31 DE DICIEMBRE DE 2025
+Ejercicio económico N° 12, iniciado el 1 de enero de 2025
+Cifras expresadas en MILES DE PESOS, en moneda homogénea
+
+ESTADO DE RESULTADOS                               31/12/2025     31/12/2024
+Ventas netas de bienes y servicios                  2.400.000      1.950.000
+Costo de los bienes vendidos                       (1.560.000)    (1.287.000)
+Resultado bruto                                       840.000        663.000
+Gastos de comercialización                          (192.000)      (156.000)
+Gastos de administración                            (168.000)      (140.000)
+Resultados financieros y por tenencia                (96.000)       (88.000)
+Resultado antes del impuesto a las ganancias          384.000        279.000
+Impuesto a las ganancias                            (134.400)       (97.650)
+Resultado neto del ejercicio                          249.600        181.350
+
+ESTADO DE SITUACIÓN PATRIMONIAL                    31/12/2025
+Activo corriente                                    1.120.000
+Activo no corriente                                   880.000
+Total del activo                                    2.000.000
+Pasivo corriente                                      640.000
+Pasivo no corriente                                   310.000
+Total del pasivo                                      950.000
+Patrimonio neto                                     1.050.000
+
+Firmado a los efectos de su identificación con nuestro informe de fecha 15/03/2026.
+Contador Público (UBA) — Ejemplo
