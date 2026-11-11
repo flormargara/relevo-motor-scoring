@@ -49,14 +49,6 @@ scorecard:
   modelo: pyme.v1.json
   si_no_disponible: continuar
 
-# Cada rating cubre las PD hasta `pd_hasta` (inclusive). El último debe llegar a 1.
-ratings:
-  - {rating: A, pd_hasta: 0.02}
-  - {rating: B, pd_hasta: 0.05}
-  - {rating: C, pd_hasta: 0.10}
-  - {rating: D, pd_hasta: 0.20}
-  - {rating: E, pd_hasta: 1.00}
-
 politica:
   rechazar_ratings: [E]
   derivar_ratings: []

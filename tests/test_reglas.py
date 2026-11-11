@@ -1,6 +1,7 @@
 """Carga y validación de las reglas versionadas."""
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -62,8 +63,6 @@ def modificar(cambio):
         (lambda d: d["killers"][1].pop("condicion"), "condicion"),
         (lambda d: d["killers"].append(dict(d["killers"][1])), "repetido"),
         (lambda d: d["killers"][1].update(condicion="solicitud.ingresos > 0"), "solicitud.ingresos"),
-        (lambda d: d["ratings"].pop(), "1"),
-        (lambda d: d["ratings"].reverse(), "orden"),
         (lambda d: d["politica"]["spread_por_rating"].pop("C"), "spread"),
         (lambda d: d["politica"]["capacidad_pago"].update(tipo="magia"), "capacidad_pago"),
         (lambda d: d["politica"].update(rechazar_ratings=["Z"]), "Z"),
@@ -81,6 +80,42 @@ def test_modelo_mal_formado(tmp_path: Path):
 
     with pytest.raises(ReglasInvalidas, match="modelo"):
         reglas_desde_dict(datos_pyme(), tmp_path)
+
+
+def test_los_ratings_los_define_el_modelo(tmp_path: Path):
+    modelo = json.loads((DIRECTORIO_MODELOS / "pyme.v1.json").read_text())
+    modelo["ratings"] = [{"rating": "A", "pd_hasta": 0.03}, {"rating": "B", "pd_hasta": 0.15}, {"rating": "E", "pd_hasta": 1}]
+    (tmp_path / "pyme.v1.json").write_text(json.dumps(modelo))
+    datos = modificar(lambda d: d.pop("ratings", None))
+    datos["politica"]["spread_por_rating"] = {"A": 5, "B": 9}
+
+    reglas = reglas_desde_dict(datos, tmp_path)
+
+    assert [(r.nombre, r.pd_hasta) for r in reglas.ratings] == [("A", 0.03), ("B", 0.15), ("E", 1)]
+
+
+@pytest.mark.parametrize(
+    "cambio, mensaje",
+    [
+        (lambda r: r.pop(), "debe ser 1"),
+        (lambda r: r.reverse(), "orden"),
+        (lambda r: r.clear(), "vacío"),
+    ],
+)
+def test_detecta_ratings_mal_formados_en_el_modelo(tmp_path: Path, cambio, mensaje):
+    modelo = json.loads((DIRECTORIO_MODELOS / "pyme.v1.json").read_text())
+    cambio(modelo["ratings"])
+    (tmp_path / "pyme.v1.json").write_text(json.dumps(modelo))
+
+    with pytest.raises(ReglasInvalidas, match=f"modelo pyme.v1.json.*{mensaje}"):
+        reglas_desde_dict(datos_pyme(), tmp_path)
+
+
+def test_las_reglas_no_pueden_declarar_ratings():
+    datos = modificar(lambda d: d.update(ratings=[{"rating": "A", "pd_hasta": 1}]))
+
+    with pytest.raises(ReglasInvalidas, match="ratings.*modelo"):
+        reglas_desde_dict(datos, DIRECTORIO_MODELOS)
 
 
 def test_las_fuentes_referenciadas(reglas_pyme):

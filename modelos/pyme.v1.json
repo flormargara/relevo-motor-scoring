@@ -4,6 +4,13 @@
   "provisional": true,
   "nota": "Puntos provisionales puestos a mano. Se reemplazan por los que entrena `sintetico` (paso 3).",
   "escala": {"puntos_base": 150, "odds_base": 20, "pdo": 30},
+  "ratings": [
+    {"rating": "A", "pd_hasta": 0.02},
+    {"rating": "B", "pd_hasta": 0.05},
+    {"rating": "C", "pd_hasta": 0.10},
+    {"rating": "D", "pd_hasta": 0.20},
+    {"rating": "E", "pd_hasta": 1.00}
+  ],
   "caracteristicas": [
     {
       "nombre": "peor_situacion_12m",

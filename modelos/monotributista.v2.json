@@ -9,6 +9,28 @@
     "odds_base": 50,
     "pdo": 20
   },
+  "ratings": [
+    {
+      "rating": "A",
+      "pd_hasta": 0.02
+    },
+    {
+      "rating": "B",
+      "pd_hasta": 0.05
+    },
+    {
+      "rating": "C",
+      "pd_hasta": 0.1
+    },
+    {
+      "rating": "D",
+      "pd_hasta": 0.2
+    },
+    {
+      "rating": "E",
+      "pd_hasta": 1.0
+    }
+  ],
   "caracteristicas": [
     {
       "nombre": "peor_situacion_12m",
