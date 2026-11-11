@@ -84,7 +84,11 @@ def test_modelo_mal_formado(tmp_path: Path):
 
 def test_los_ratings_los_define_el_modelo(tmp_path: Path):
     modelo = json.loads((DIRECTORIO_MODELOS / "pyme.v1.json").read_text())
-    modelo["ratings"] = [{"rating": "A", "pd_hasta": 0.03}, {"rating": "B", "pd_hasta": 0.15}, {"rating": "E", "pd_hasta": 1}]
+    modelo["ratings"] = [
+        {"rating": "A", "pd_hasta": 0.03},
+        {"rating": "B", "pd_hasta": 0.15},
+        {"rating": "E", "pd_hasta": 1},
+    ]
     (tmp_path / "pyme.v1.json").write_text(json.dumps(modelo))
     datos = modificar(lambda d: d.pop("ratings", None))
     datos["politica"]["spread_por_rating"] = {"A": 5, "B": 9}

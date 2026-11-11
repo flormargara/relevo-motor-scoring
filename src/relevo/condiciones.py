@@ -18,7 +18,11 @@ Resolver = Callable[[str, str], Any]
 
 
 class CondicionInvalida(ValueError):
-    """La expresión no respeta el lenguaje de condiciones."""
+    """La expresión no respeta el lenguaje de condiciones. ``motivo`` lo explica sin repetir el texto."""
+
+    def __init__(self, mensaje: str, motivo: str | None = None):
+        super().__init__(mensaje)
+        self.motivo = motivo or mensaje
 
 
 class SinDato(Exception):
@@ -52,7 +56,8 @@ class Expresion:
         try:
             arbol = ast.parse(texto.strip(), mode="eval")
         except SyntaxError as error:
-            raise CondicionInvalida(f"sintaxis inválida en {texto!r}: {error.msg}") from None
+            motivo = "sintaxis inválida: la condición está incompleta o mal escrita"
+            raise CondicionInvalida(f"{motivo} en {texto!r} ({error.msg})", motivo) from None
         self._raiz = arbol.body
         referencias: list[tuple[str, str]] = []
         self._validar(self._raiz, referencias)
@@ -101,13 +106,17 @@ class Expresion:
                 if fuente.startswith("_") or variable.startswith("_"):
                     raise self._invalida(f"nombre no permitido: {fuente}.{variable}")
                 referencias.append((fuente, variable))
+            case ast.Attribute():
+                raise self._invalida(f"las variables se escriben fuente.variable, con un punto: {ast.unparse(nodo)}")
+            case ast.Call():
+                raise self._invalida("llamada no permitida: no se pueden usar funciones")
             case ast.Name(id=nombre):
                 raise self._invalida(f"variable sin fuente: {nombre!r} (usar fuente.variable)")
             case _:
                 raise self._invalida(f"construcción no permitida: {type(nodo).__name__}")
 
     def _invalida(self, motivo: str) -> CondicionInvalida:
-        return CondicionInvalida(f"{motivo} en {self.texto!r}")
+        return CondicionInvalida(f"{motivo} en {self.texto!r}", motivo)
 
     # --- evaluación -------------------------------------------------------
 

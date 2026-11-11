@@ -17,6 +17,7 @@ El dueño de las reglas es el **flujo** (segmento + tipo de flujo), no el segmen
 
 - Un cambio de reglas ya no pasa por PR ni por tests de CI: la protección es la validación al publicar (sintaxis, variables del catálogo del flujo, ratings que cubren la PD hasta 1, ratings de la política existentes, spread para cada rating aprobado), un motivo obligatorio y el diff contra la versión anterior.
 - Sin autenticación por ahora: el autor de cada publicación es un nombre declarado. Roles y cuatro ojos quedan para cuando haya login.
+- El catálogo de variables de un flujo no se escribe a mano: cada fuente declara sus variables junto al código que las produce (un test de contrato verifica que coinciden con lo que devuelve) y `config/flujos.yaml` declara qué fuentes consulta cada flujo. Tanto la semilla como lo que se publica se validan contra ese catálogo.
 - Un solo borrador por flujo; publicar exige que parta de la versión vigente (bloqueo optimista).
 - Sin simulador: el backtest sigue en la fase 2 y la revisión de un cambio es el diff.
 - El scorecard (`modelos/*.json`) sigue siendo un archivo versionado que cada versión referencia; no se edita desde la app.

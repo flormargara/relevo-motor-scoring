@@ -18,6 +18,7 @@ from relevo.agentes import (
     responder,
     variables_documentos,
 )
+from relevo.catalogo import catalogo
 from relevo.clientes_claude import AgenteNoDisponible
 from relevo.motor import evaluar
 
@@ -124,6 +125,9 @@ def test_variables_de_monotributista_calculan_la_antiguedad():
         "cuit_coincide": True,
         "confianza_minima": 0.9,
     }
+    # contrato con el catálogo del flujo (ADR 0007)
+    del_catalogo = {v.nombre for v in catalogo("monotributista") if v.fuente == "documentos"}
+    assert {f"documentos.{k}" for k in variables} == del_catalogo - {"documentos.sin_antecedentes"}
 
 
 def test_variable_faltante_queda_sin_dato_y_baja_la_confianza_a_cero():

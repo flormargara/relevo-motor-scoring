@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from relevo.catalogo import catalogo, flujos
 from relevo.reglas import DIRECTORIO_MODELOS, Reglas, ReglasInvalidas, reglas_desde_dict
 from relevo.repositorio import Repositorio
 
@@ -36,7 +37,9 @@ class VersionesReglas:
                 continue
             texto = archivo.read_text(encoding="utf-8")
             self._parsear(texto, flujo, version, archivo.name)
-            self.repositorio.guardar_version_reglas(flujo, version, texto, autor="semilla", motivo=f"importada de {archivo.name}")
+            self.repositorio.guardar_version_reglas(
+                flujo, version, texto, autor="semilla", motivo=f"importada de {archivo.name}"
+            )
             importadas.append(f"{flujo}.v{version}")
         return importadas
 
@@ -59,4 +62,10 @@ class VersionesReglas:
         reglas = reglas_desde_dict(datos, self.directorio_modelos)
         if reglas.segmento != flujo or reglas.version != version:
             raise ReglasInvalidas(f"{donde} declara la versión {reglas.version} del flujo {reglas.segmento!r}")
+        if flujo not in flujos():
+            raise ReglasInvalidas(f"{donde}: el flujo {flujo!r} no está en config/flujos.yaml")
+        del_catalogo = {v.nombre for v in catalogo(flujo)}
+        for nombre in reglas.variables:
+            if nombre not in del_catalogo:
+                raise ReglasInvalidas(f"{donde}: {nombre} no está en el catálogo de {flujos()[flujo].nombre}")
         return reglas

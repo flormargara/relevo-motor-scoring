@@ -13,6 +13,8 @@ reproducir traduciendo de nuevo lo mismo.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
@@ -24,8 +26,17 @@ class FuenteCaida(Exception):
     """La fuente no pudo responder. Se puede reintentar."""
 
 
+@dataclass(frozen=True)
+class Variable:
+    """Una variable que una fuente entrega a las reglas: su tipo y qué significa (catálogo, ADR 0007)."""
+
+    tipo: str  # booleano | entero | número | pesos | proporción | texto | fecha
+    descripcion: str
+
+
 class AdapterFuente(Protocol):
     nombre: str
+    variables: Mapping[str, Variable]  # lo que devuelve ``traducir`` cuando la fuente está disponible
 
     def consultar(self, identificacion: str, timeout: float) -> Any: ...
 

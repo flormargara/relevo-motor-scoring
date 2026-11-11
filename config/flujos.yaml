@@ -1,0 +1,17 @@
+# Flujos del motor y las fuentes que consulta cada uno (ADR 0007).
+#
+# Un flujo es una variante del motor aplicada a un segmento (hoy, originación).
+# El catálogo de variables de un flujo son las de la solicitud más las que declara
+# cada una de sus fuentes; las reglas del flujo solo pueden usar esas.
+# Agregar una fuente a un flujo es una decisión de producto: si la fuente es nueva,
+# primero hay que programar su adapter.
+
+pyme:
+  nombre: PyME · Originación
+  segmento: pyme
+  fuentes: [cendeu, cheques, arca, igj, propios, bureau, badlar, documentos]
+
+monotributista:
+  nombre: Monotributista · Originación
+  segmento: monotributista
+  fuentes: [cendeu, cheques, arca, identidad, propios, bureau, badlar, documentos]

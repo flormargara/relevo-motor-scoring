@@ -14,7 +14,8 @@ def semilla(directorio: Path, *versiones: int) -> Path:
     """Escribe pyme.v<N>.yaml a partir de la v1 real, cambiando solo el número de versión."""
     datos = yaml.safe_load((DIRECTORIO_REGLAS / "pyme.v1.yaml").read_text())
     for version in versiones:
-        (directorio / f"pyme.v{version}.yaml").write_text(yaml.safe_dump(datos | {"version": version}, allow_unicode=True))
+        texto = yaml.safe_dump(datos | {"version": version}, allow_unicode=True)
+        (directorio / f"pyme.v{version}.yaml").write_text(texto)
     return directorio
 
 
@@ -43,6 +44,15 @@ def test_flujo_o_version_inexistente():
 
     with pytest.raises(ReglasInvalidas, match="no hay reglas"):
         versiones.reglas("pyme")
+
+
+def test_una_semilla_con_variables_fuera_del_catalogo_del_flujo_no_se_importa(tmp_path: Path):
+    datos = yaml.safe_load((DIRECTORIO_REGLAS / "pyme.v1.yaml").read_text())
+    datos["killers"][2]["condicion"] = "identidad.edad < 18"  # identidad no es fuente de PyME
+    (tmp_path / "pyme.v1.yaml").write_text(yaml.safe_dump(datos, allow_unicode=True))
+
+    with pytest.raises(ReglasInvalidas, match="identidad.edad no está en el catálogo"):
+        VersionesReglas(Repositorio()).importar(tmp_path)
 
 
 def test_una_semilla_invalida_no_se_importa(tmp_path: Path):

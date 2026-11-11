@@ -128,17 +128,25 @@ class Reglas:
         return f"{self.segmento}.v{self.version}"
 
     @property
-    def fuentes(self) -> tuple[str, ...]:
-        """Las fuentes que estas reglas pueden llegar a consultar, en orden de uso."""
-        expresiones = [
+    def _expresiones(self) -> list[Expresion]:
+        return [
             *(r.condicion for r in self.killers),
             *(r.condicion for r in self.derivaciones),
             *(c.expresion for c in self.scorecard.caracteristicas),
             self.politica.tasa_base,
             self.politica.capacidad_pago.variable,
         ]
-        fuentes = (f for e in expresiones for f in e.fuentes if f != "solicitud")
+
+    @property
+    def fuentes(self) -> tuple[str, ...]:
+        """Las fuentes que estas reglas pueden llegar a consultar, en orden de uso."""
+        fuentes = (f for e in self._expresiones for f in e.fuentes if f != "solicitud")
         return tuple(dict.fromkeys(fuentes))
+
+    @property
+    def variables(self) -> tuple[str, ...]:
+        """Todas las variables (``fuente.variable``) que usan estas reglas, sin repetir."""
+        return tuple(dict.fromkeys(f"{f}.{v}" for e in self._expresiones for f, v in e.referencias))
 
     def rating_para(self, pd: float) -> str:
         return next(r.nombre for r in self.ratings if pd <= r.pd_hasta)

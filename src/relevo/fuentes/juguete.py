@@ -16,7 +16,8 @@ from typing import Any
 import yaml
 
 from relevo.consultor import Disponible, ResultadoFuente
-from relevo.fuentes import FuenteCaida
+from relevo.fuentes import FuenteCaida, Variable
+from relevo.fuentes.identidad import VARIABLES_IDENTIDAD
 
 CONFIG_POR_DEFECTO = Path(__file__).resolve().parents[3] / "config" / "juguete.yaml"
 
@@ -48,6 +49,9 @@ class _Juguete:
 
 class Bureau(_Juguete):
     nombre = "bureau"
+    variables = {
+        "score": Variable("entero", "Score del bureau (300 a 950)"),
+    }
 
     def _datos(self, cuit: str) -> dict[str, Any]:
         caso = self.casos.get(cuit) or {}
@@ -59,6 +63,10 @@ class Bureau(_Juguete):
 
 class Propios(_Juguete):
     nombre = "propios"
+    variables = {
+        "lista_negra": Variable("booleano", "Está en la lista negra de la entidad"),
+        "creditos_previos": Variable("entero", "Créditos previos con la entidad"),
+    }
 
     def __init__(self, datos: Mapping[str, Any]):
         super().__init__(datos)
@@ -74,6 +82,7 @@ class Propios(_Juguete):
 
 class Identidad(_Juguete):
     nombre = "identidad"
+    variables = VARIABLES_IDENTIDAD
 
     def __init__(self, datos: Mapping[str, Any], hoy: Callable[[], date] = date.today):
         super().__init__(datos)
