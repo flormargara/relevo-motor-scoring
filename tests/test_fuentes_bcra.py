@@ -38,6 +38,7 @@ def sin_cliente():
 def test_cendeu_deudor_sano():
     variables = Cendeu(sin_cliente()).traducir(crudo_cendeu(BNA)).variables
 
+    assert set(variables) == set(Cendeu.variables)  # contrato con el catálogo (ADR 0007)
     assert variables["denominacion"] == "BANCO DE LA NACION ARGENTINA"
     assert variables["periodo"] == "202609"
     assert variables["peor_situacion_12m"] == 1
@@ -94,6 +95,7 @@ def test_cheques_cuenta_los_impagos():
     """Celulosa Argentina: 1652 cheques rechazados sin fondos en dos entidades; 4 se pagaron después."""
     variables = Cheques(sin_cliente()).traducir(fixture(f"{CELULOSA}_chequesrechazados")).variables
 
+    assert set(variables) == set(Cheques.variables)  # contrato con el catálogo (ADR 0007)
     assert variables["rechazados_total"] == 1652
     assert variables["rechazados_impagos"] == 1648
     assert variables["monto_impago"] == pytest.approx(26_845_062_084.82)
@@ -110,6 +112,7 @@ def test_badlar_toma_el_ultimo_valor_publicado():
     resultado = Badlar(sin_cliente()).traducir(fixture("badlar_7"))
 
     assert resultado == Disponible({"tasa": 21.5, "fecha": "2026-11-04", "desactualizada": False})
+    assert set(resultado.variables) == set(Badlar.variables)  # contrato con el catálogo (ADR 0007)
 
 
 def test_badlar_sin_datos_en_la_ventana():

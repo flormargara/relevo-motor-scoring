@@ -3,7 +3,7 @@
 # comparaciones, and/or/not, + - * / y listas de constantes.
 # `si_no_disponible`: continuar (default) | derivar | rechazar. Ver ADR 0006.
 
-segmento: pyme
+flujo: pyme
 version: 1
 
 # El orden es parte de la política (ADR 0005): de lo más barato y frecuente a lo más caro.
@@ -48,14 +48,6 @@ derivaciones:
 scorecard:
   modelo: pyme.v1.json
   si_no_disponible: continuar
-
-# Cada rating cubre las PD hasta `pd_hasta` (inclusive). El último debe llegar a 1.
-ratings:
-  - {rating: A, pd_hasta: 0.02}
-  - {rating: B, pd_hasta: 0.05}
-  - {rating: C, pd_hasta: 0.10}
-  - {rating: D, pd_hasta: 0.20}
-  - {rating: E, pd_hasta: 1.00}
 
 politica:
   rechazar_ratings: [E]

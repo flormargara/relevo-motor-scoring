@@ -4,6 +4,7 @@ import json
 import re
 
 import pytest
+import yaml
 from adapters_falsos import ClaudeFalso, FabricaFalsa
 from fastapi.testclient import TestClient
 
@@ -150,11 +151,81 @@ def test_evaluar_pendientes(cliente):
 
 @pytest.mark.parametrize("segmento", ["pyme", "monotributista"])
 def test_pantalla_de_reglas(cliente, segmento):
-    pagina = cliente()[0].get(f"/reglas?segmento={segmento}").text
+    pagina = cliente()[0].get(f"/reglas?flujo={segmento}").text
 
     assert f"{segmento}.v3" in pagina
     assert "situacion_bcra_3_o_peor" in pagina
     assert "AUC" in pagina
+
+
+def vigente(servicio, flujo="pyme"):
+    return yaml.safe_load(servicio.repositorio.version_reglas(flujo).contenido)
+
+
+def test_publicar_desde_la_app_crea_la_version_siguiente_y_queda_en_el_historial(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["politica"]["derivar_ratings"] = ["D"]
+
+    respuesta = app.post(
+        "/reglas/pyme/publicar", json={"contenido": contenido, "base": 3, "autor": "Ana", "motivo": "D va a analista"}
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["version"] == "pyme.v4"
+    historial = app.get("/reglas/pyme/historial").text
+    assert "v4" in historial and "Ana" in historial and "D va a analista" in historial
+    assert "Rating D · decisión" in historial
+
+
+def test_publicar_sobre_una_version_vieja_es_un_conflicto(cliente):
+    app, servicio = cliente()
+
+    respuesta = app.post(
+        "/reglas/pyme/publicar", json={"contenido": vigente(servicio), "base": 2, "autor": "Ana", "motivo": "x"}
+    )
+
+    assert respuesta.status_code == 409
+    assert "v3" in respuesta.json()["error"]
+
+
+def test_publicar_algo_invalido_explica_por_que(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["killers"][0]["condicion"] = "identidad.edad < 18"
+
+    cuerpo = {"contenido": contenido, "base": 3, "autor": "Ana", "motivo": "x"}
+    respuesta = app.post("/reglas/pyme/publicar", json=cuerpo)
+
+    assert respuesta.status_code == 422
+    assert "identidad.edad no está en el catálogo" in respuesta.json()["error"]
+
+
+def test_el_borrador_compartido_se_guarda_y_se_descarta(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["killers"][0]["condicion"] = "a medio escribir and"
+
+    assert app.put("/reglas/pyme/borrador", json={"contenido": contenido, "base": 3}).status_code == 204
+    assert servicio.versiones.borrador("pyme").contenido["killers"][0]["condicion"] == "a medio escribir and"
+    assert "a medio escribir and" in app.get("/reglas?flujo=pyme").text
+
+    assert app.delete("/reglas/pyme/borrador").status_code == 204
+    assert servicio.versiones.borrador("pyme") is None
+
+
+def test_validar_una_condicion_contra_el_catalogo_del_flujo(cliente):
+    respuesta = cliente()[0].post("/reglas/validar", json={"flujo": "monotributista", "condicion": "igj.dada_de_baja"})
+
+    assert respuesta.json() == {
+        "ok": False,
+        "error": "igj.dada_de_baja no está en el catálogo de Monotributista · Originación.",
+        "usa": ["igj.dada_de_baja"],
+    }
+
+
+def test_flujo_inexistente_es_404(cliente):
+    assert cliente()[0].get("/reglas?flujo=cooperativa").status_code == 404
 
 
 def test_caso_inexistente(cliente):
@@ -281,3 +352,40 @@ def test_fecha_de_nacimiento_invalida_muestra_el_error(cliente):
 
     assert respuesta.status_code == 400
     assert "fecha de nacimiento" in respuesta.text
+
+
+def test_los_cambios_del_borrador_los_calcula_el_servidor(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["politica"]["derivar_ratings"] = ["D"]
+
+    respuesta = app.post("/reglas/pyme/cambios", json={"contenido": contenido})
+
+    assert respuesta.json() == {
+        "cambios": [{"tipo": "modificada", "que": "Rating D · decisión", "antes": "aprueba", "despues": "deriva"}]
+    }
+
+
+def test_los_cambios_de_un_borrador_que_todavia_no_se_puede_leer_explican_por_que(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["killers"][0]["condicion"] = "propios.lista_negra or"
+
+    respuesta = app.post("/reglas/pyme/cambios", json={"contenido": contenido})
+
+    assert respuesta.status_code == 422
+    assert "incompleta" in respuesta.json()["error"]
+
+
+def test_desde_la_app_se_actualiza_la_base_del_borrador_y_se_vuelve_a_una_version(cliente):
+    app, servicio = cliente()
+    app.put("/reglas/pyme/borrador", json={"contenido": vigente(servicio), "base": 2})
+
+    respuesta = app.post("/reglas/pyme/borrador/actualizar-base", follow_redirects=False)
+    assert respuesta.status_code == 303
+    assert servicio.versiones.borrador("pyme").base == 3
+
+    respuesta = app.post("/reglas/pyme/borrador/desde/1", follow_redirects=False)
+    assert respuesta.status_code == 303
+    assert servicio.versiones.borrador("pyme").base == 3
+    assert "Cargar esta versión en el borrador" in app.get("/reglas/pyme/historial").text

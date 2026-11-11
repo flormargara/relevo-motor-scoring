@@ -1,7 +1,7 @@
 # Reglas del segmento Monotributista (persona humana con actividad), versión 1.
 # Ver los comentarios de pyme.v1.yaml para el formato.
 
-segmento: monotributista
+flujo: monotributista
 version: 1
 
 killers:
@@ -43,13 +43,6 @@ derivaciones:
 scorecard:
   modelo: monotributista.v1.json
   si_no_disponible: continuar
-
-ratings:
-  - {rating: A, pd_hasta: 0.02}
-  - {rating: B, pd_hasta: 0.05}
-  - {rating: C, pd_hasta: 0.10}
-  - {rating: D, pd_hasta: 0.20}
-  - {rating: E, pd_hasta: 1.00}
 
 politica:
   rechazar_ratings: [E]

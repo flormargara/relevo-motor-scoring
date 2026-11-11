@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from relevo.consultor import Disponible, NoDisponible, ResultadoFuente
-from relevo.fuentes import get_json
+from relevo.fuentes import Variable, get_json
 
 URL = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/7"
 VENTANA_DIAS = 30
@@ -21,6 +21,11 @@ VENTANA_DIAS = 30
 
 class Badlar:
     nombre = "badlar"
+    variables = {
+        "tasa": Variable("número", "Última BADLAR publicada (TNA en %)"),
+        "fecha": Variable("fecha", "Fecha de la última BADLAR publicada"),
+        "desactualizada": Variable("booleano", "El valor es el último guardado porque el BCRA no respondió"),
+    }
 
     def __init__(self, cliente: httpx.Client, hoy: Callable[[], date] = date.today, url: str = URL):
         self.cliente = cliente

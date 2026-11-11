@@ -10,10 +10,18 @@ from collections.abc import Mapping
 from typing import Any
 
 from relevo.consultor import Disponible, ResultadoFuente, SinAntecedentes
+from relevo.fuentes import Variable
 
 
 class Documentos:
     nombre = "documentos"
+    variables = {
+        "ventas_anuales": Variable("pesos", "Ventas anuales según el balance"),
+        "categoria_monotributo": Variable("texto", "Categoría de monotributo según la constancia"),
+        "antiguedad_actividad_anios": Variable("número", "Años desde el inicio de actividades según la constancia"),
+        "cuit_coincide": Variable("booleano", "El CUIT de los documentos coincide con el de la solicitud"),
+        "confianza_minima": Variable("proporción", "Menor confianza entre los campos extraídos que usa el flujo"),
+    }
 
     def __init__(self, campos: Mapping[str, Any] | None):
         self.campos = dict(campos) if campos else None

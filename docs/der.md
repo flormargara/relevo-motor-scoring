@@ -10,6 +10,8 @@ erDiagram
     evaluaciones ||--o| informes : redacta
     evaluaciones ||--o{ chat : conversa
     evaluaciones ||--o{ resoluciones : resuelve
+    versiones_reglas ||--o{ evaluaciones : "usada por (flujo.vN)"
+    versiones_reglas ||--o| borradores_reglas : "parte de (base)"
 
     solicitudes {
         text id PK
@@ -81,6 +83,21 @@ erDiagram
         text analista
         text creada_en
     }
+    versiones_reglas {
+        text flujo PK
+        int version PK
+        text contenido
+        text autor
+        text motivo
+        int base
+        text publicada_en
+    }
+    borradores_reglas {
+        text flujo PK
+        text contenido
+        int base
+        text actualizado_en
+    }
 ```
 
 ## Notas
@@ -90,4 +107,6 @@ erDiagram
 - `snapshots.solicitud_id` repite el de la solicitud sin ser clave foránea: el almacén de snapshots lo usa para reutilizar consultas pagas entre evaluaciones de la misma solicitud (índice `snapshots_por_fuente`).
 - `solicitudes.documentos` guarda las variables cargadas a mano en el alta. Los documentos subidos y lo que extrae el agente están en la tabla `documentos`.
 - `evaluaciones.traza`, `motivos`, `oferta` y `snapshots.crudo` / `resultado` son JSON en columnas de texto.
+- `versiones_reglas` guarda las reglas de cada flujo (ADR 0007). Es inmutable: publicar agrega una fila y la vigente es la de mayor `version`. `contenido` es el YAML de las reglas; las versiones sembradas desde `rules/` tienen autor `semilla`. No hay clave foránea con `evaluaciones`: la evaluación guarda el id `flujo.vN` como texto en `version_reglas`.
+- `borradores_reglas` tiene a lo sumo un borrador por flujo, compartido. `contenido` es JSON todavía sin validar y `base` es la versión vigente de la que parte; publicar lo valida, crea la versión siguiente y borra el borrador.
 - Los padrones `data/arca.sqlite` y `data/igj.sqlite` son snapshots de solo lectura, con otro esquema, y no forman parte de este diagrama.

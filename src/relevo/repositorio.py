@@ -94,6 +94,27 @@ CREATE TABLE IF NOT EXISTS chat (
     creado_en TEXT NOT NULL
 );
 
+-- Versiones publicadas de las reglas de cada flujo (ADR 0007). Son inmutables:
+-- publicar agrega una fila; la vigente es la de mayor versión.
+CREATE TABLE IF NOT EXISTS versiones_reglas (
+    flujo TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    contenido TEXT NOT NULL,     -- YAML de las reglas
+    autor TEXT NOT NULL,
+    motivo TEXT NOT NULL,
+    base INTEGER,                -- versión de la que partió, o NULL (semilla)
+    publicada_en TEXT NOT NULL,
+    PRIMARY KEY (flujo, version)
+);
+
+-- El borrador en edición de cada flujo: uno solo y compartido (ADR 0007).
+CREATE TABLE IF NOT EXISTS borradores_reglas (
+    flujo TEXT PRIMARY KEY,
+    contenido TEXT NOT NULL,     -- JSON de las reglas, todavía sin validar
+    base INTEGER NOT NULL,       -- versión vigente de la que parte
+    actualizado_en TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS resoluciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     evaluacion_id INTEGER NOT NULL REFERENCES evaluaciones(id) ON DELETE CASCADE,
@@ -158,6 +179,25 @@ class DocumentoGuardado:
     extraido: dict[str, Any] | None
     error: str | None
     creado_en: datetime
+
+
+@dataclass(frozen=True)
+class VersionReglasGuardada:
+    flujo: str
+    version: int
+    contenido: str
+    autor: str
+    motivo: str
+    base: int | None
+    publicada_en: datetime
+
+
+@dataclass(frozen=True)
+class BorradorReglas:
+    flujo: str
+    contenido: dict[str, Any]
+    base: int
+    actualizado_en: datetime
 
 
 class SolicitudInexistente(LookupError):
@@ -414,6 +454,67 @@ class Repositorio:
         if fila is None:
             return None
         return Resolucion(fila["decision"], fila["motivo"], fila["analista"], datetime.fromisoformat(fila["creada_en"]))
+
+    # --- versiones de reglas (ADR 0007) -------------------------------------
+
+    def guardar_version_reglas(
+        self,
+        flujo: str,
+        version: int,
+        contenido: str,
+        autor: str,
+        motivo: str,
+        base: int | None = None,
+        ahora: datetime | None = None,
+    ) -> None:
+        self._ejecutar(
+            "INSERT INTO versiones_reglas (flujo, version, contenido, autor, motivo, base, publicada_en) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (flujo, version, contenido, autor, motivo, base, (ahora or datetime.now()).isoformat()),
+        )
+
+    def guardar_borrador_reglas(
+        self, flujo: str, contenido: dict[str, Any], base: int, ahora: datetime | None = None
+    ) -> None:
+        self._ejecutar(
+            "INSERT INTO borradores_reglas (flujo, contenido, base, actualizado_en) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (flujo) DO UPDATE SET contenido = excluded.contenido, base = excluded.base, "
+            "actualizado_en = excluded.actualizado_en",
+            (flujo, _json(contenido), base, (ahora or datetime.now()).isoformat()),
+        )
+
+    def borrador_reglas(self, flujo: str) -> BorradorReglas | None:
+        fila = self._ejecutar("SELECT * FROM borradores_reglas WHERE flujo = ?", (flujo,)).fetchone()
+        if fila is None:
+            return None
+        return BorradorReglas(
+            fila["flujo"], json.loads(fila["contenido"]), fila["base"], datetime.fromisoformat(fila["actualizado_en"])
+        )
+
+    def borrar_borrador_reglas(self, flujo: str) -> None:
+        self._ejecutar("DELETE FROM borradores_reglas WHERE flujo = ?", (flujo,))
+
+    def versiones_reglas(self, flujo: str) -> list[VersionReglasGuardada]:
+        """Todas las versiones del flujo, de la más nueva a la más vieja."""
+        filas = self._ejecutar("SELECT version FROM versiones_reglas WHERE flujo = ? ORDER BY version DESC", (flujo,))
+        return [self.version_reglas(flujo, fila["version"]) for fila in filas.fetchall()]
+
+    def version_reglas(self, flujo: str, version: int | None = None) -> VersionReglasGuardada | None:
+        """La versión pedida o, si no se pide, la vigente (la de mayor número)."""
+        if version is None:
+            fila = self._ejecutar(
+                "SELECT * FROM versiones_reglas WHERE flujo = ? ORDER BY version DESC LIMIT 1", (flujo,)
+            ).fetchone()
+        else:
+            fila = self._ejecutar(
+                "SELECT * FROM versiones_reglas WHERE flujo = ? AND version = ?", (flujo, version)
+            ).fetchone()
+        if fila is None:
+            return None
+        return VersionReglasGuardada(
+            fila["flujo"], fila["version"], fila["contenido"], fila["autor"], fila["motivo"], fila["base"],
+            datetime.fromisoformat(fila["publicada_en"]),
+        )
 
 
 class AlmacenSqlite:

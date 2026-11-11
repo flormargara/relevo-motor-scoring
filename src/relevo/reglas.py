@@ -1,8 +1,9 @@
-"""Reglas versionadas por segmento (ADR 0002).
+"""Reglas de un flujo (ADR 0002 y 0007).
 
-``cargar_reglas`` lee ``rules/<segmento>.v<N>.yaml`` y el modelo del scorecard
-que referencia (``modelos/<archivo>.json``), y valida todo al cargar: un YAML
-mal formado falla acá y nunca en medio de una evaluación.
+``reglas_desde_dict`` construye y valida unas reglas con el modelo del scorecard que
+referencian (``modelos/<archivo>.json``): unas reglas mal formadas fallan al cargarlas
+y nunca en medio de una evaluación. Las versiones viven en la base (``versiones_reglas``);
+``cargar_reglas`` lee los YAML de ``rules/``, que son la semilla.
 """
 
 from __future__ import annotations
@@ -115,7 +116,7 @@ class Politica:
 
 @dataclass(frozen=True)
 class Reglas:
-    segmento: str
+    flujo: str
     version: int
     killers: tuple[Regla, ...]
     derivaciones: tuple[Regla, ...]
@@ -125,20 +126,28 @@ class Reglas:
 
     @property
     def id(self) -> str:
-        return f"{self.segmento}.v{self.version}"
+        return f"{self.flujo}.v{self.version}"
 
     @property
-    def fuentes(self) -> tuple[str, ...]:
-        """Las fuentes que estas reglas pueden llegar a consultar, en orden de uso."""
-        expresiones = [
+    def _expresiones(self) -> list[Expresion]:
+        return [
             *(r.condicion for r in self.killers),
             *(r.condicion for r in self.derivaciones),
             *(c.expresion for c in self.scorecard.caracteristicas),
             self.politica.tasa_base,
             self.politica.capacidad_pago.variable,
         ]
-        fuentes = (f for e in expresiones for f in e.fuentes if f != "solicitud")
+
+    @property
+    def fuentes(self) -> tuple[str, ...]:
+        """Las fuentes que estas reglas pueden llegar a consultar, en orden de uso."""
+        fuentes = (f for e in self._expresiones for f in e.fuentes if f != "solicitud")
         return tuple(dict.fromkeys(fuentes))
+
+    @property
+    def variables(self) -> tuple[str, ...]:
+        """Todas las variables (``fuente.variable``) que usan estas reglas, sin repetir."""
+        return tuple(dict.fromkeys(f"{f}.{v}" for e in self._expresiones for f, v in e.referencias))
 
     def rating_para(self, pd: float) -> str:
         return next(r.nombre for r in self.ratings if pd <= r.pd_hasta)
@@ -178,22 +187,25 @@ def cargar_reglas(
     except yaml.YAMLError as error:
         raise ReglasInvalidas(f"{archivo.name}: YAML inválido: {error}") from None
     reglas = reglas_desde_dict(datos, directorio_modelos)
-    if reglas.segmento != segmento or reglas.version != elegida:
-        raise ReglasInvalidas(f"{archivo.name} declara la versión {reglas.version} del segmento {reglas.segmento!r}")
+    if reglas.flujo != segmento or reglas.version != elegida:
+        raise ReglasInvalidas(f"{archivo.name} declara la versión {reglas.version} del flujo {reglas.flujo!r}")
     return reglas
 
 
 def reglas_desde_dict(datos: Any, directorio_modelos: Path = DIRECTORIO_MODELOS) -> Reglas:
     """Construye y valida las reglas a partir del contenido de un YAML."""
     d = _Lector(datos, "reglas")
-    ratings = _ratings(d.lista("ratings"))
+    if "ratings" in d.datos:
+        raise ReglasInvalidas("ratings: los define el modelo del scorecard, no las reglas")
+    scorecard, ratings = _scorecard(d.dict("scorecard"), directorio_modelos)
     nombres = tuple(r.nombre for r in ratings)
     return Reglas(
-        segmento=d.texto("segmento"),
+        # `segmento:` es el nombre viejo de la clave, en las versiones importadas antes del ADR 0007
+        flujo=d.texto("flujo" if "flujo" in d.datos else "segmento"),
         version=d.entero("version"),
         killers=_reglas(d.lista("killers"), "killers"),
         derivaciones=_reglas(d.lista("derivaciones", []), "derivaciones"),
-        scorecard=_scorecard(d.dict("scorecard"), directorio_modelos),
+        scorecard=scorecard,
         ratings=ratings,
         politica=_politica(d.dict("politica"), nombres),
     )
@@ -279,22 +291,23 @@ def _reglas(items: list, seccion: str) -> tuple[Regla, ...]:
     return tuple(reglas)
 
 
-def _ratings(items: list) -> tuple[Rating, ...]:
+def _ratings(items: list, donde: str) -> tuple[Rating, ...]:
     ratings = tuple(
         Rating(nombre=d.texto("rating"), pd_hasta=d.numero("pd_hasta"))
-        for d in (_Lector(item, f"ratings[{i}]") for i, item in enumerate(items))
+        for d in (_Lector(item, f"{donde}: ratings[{i}]") for i, item in enumerate(items))
     )
     if not ratings:
-        raise ReglasInvalidas("ratings: no puede estar vacío")
+        raise ReglasInvalidas(f"{donde}: ratings no puede estar vacío")
     cortes = [r.pd_hasta for r in ratings]
     if cortes != sorted(cortes) or len(set(cortes)) != len(cortes):
-        raise ReglasInvalidas("ratings: los pd_hasta deben ir en orden creciente")
+        raise ReglasInvalidas(f"{donde}: los pd_hasta de los ratings deben ir en orden creciente")
     if cortes[-1] != 1:
-        raise ReglasInvalidas("ratings: el último pd_hasta debe ser 1")
+        raise ReglasInvalidas(f"{donde}: el último pd_hasta de los ratings debe ser 1")
     return ratings
 
 
-def _scorecard(datos: dict, directorio_modelos: Path) -> Scorecard:
+def _scorecard(datos: dict, directorio_modelos: Path) -> tuple[Scorecard, tuple[Rating, ...]]:
+    """El scorecard y los ratings del modelo: los ratings son del modelo, no de las reglas (ADR 0007)."""
     d = _Lector(datos, "scorecard")
     nombre_modelo = d.texto("modelo")
     archivo = directorio_modelos / nombre_modelo
@@ -309,7 +322,8 @@ def _scorecard(datos: dict, directorio_modelos: Path) -> Scorecard:
         )
         if not caracteristicas:
             raise ReglasInvalidas(f"modelo {nombre_modelo}: no tiene características")
-        return Scorecard(
+        ratings = _ratings(modelo.lista("ratings"), f"modelo {nombre_modelo}")
+        scorecard = Scorecard(
             modelo=nombre_modelo,
             provisional=bool(modelo.datos.get("provisional", False)),
             puntos_base=escala.numero("puntos_base"),
@@ -318,6 +332,7 @@ def _scorecard(datos: dict, directorio_modelos: Path) -> Scorecard:
             caracteristicas=caracteristicas,
             si_no_disponible=d.accion("si_no_disponible", "continuar"),
         )
+        return scorecard, ratings
     except json.JSONDecodeError as error:
         raise ReglasInvalidas(f"modelo {nombre_modelo}: JSON inválido: {error}") from None
 

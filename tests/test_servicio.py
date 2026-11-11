@@ -10,6 +10,7 @@ from conftest import BASE_MONOTRIBUTISTA, BASE_PYME, CUIL_MONOTRIBUTISTA, CUIT_P
 from relevo.consultor import NoDisponible
 from relevo.consultor_real import cargar_config_fuentes
 from relevo.dominio import Veredicto
+from relevo.reglas import DIRECTORIO_REGLAS
 from relevo.repositorio import Repositorio
 from relevo.servicio import ConsentimientoRequerido, Servicio, SolicitudInvalida
 
@@ -47,6 +48,28 @@ def test_alta_y_evaluacion(reglas_pyme):
     assert guardada.evaluacion.version_reglas == "pyme.v3"
     assert guardada.evaluacion.veredicto is Veredicto.APROBADO
     assert {s.fuente for s in guardada.evaluacion.snapshots} >= {"cendeu", "bureau", "documentos"}
+
+
+def test_evalua_con_las_reglas_de_la_base_aunque_falten_los_yaml(tmp_path: Path):
+    for archivo in ("pyme.v1.yaml", "pyme.v2.yaml"):
+        (tmp_path / archivo).write_text((DIRECTORIO_REGLAS / archivo).read_text())
+    repositorio = Repositorio()
+    Servicio(repositorio, adapters=FabricaFalsa({}), directorio_reglas=tmp_path)  # importa la semilla
+    for archivo in tmp_path.iterdir():
+        archivo.unlink()
+
+    servicio = Servicio(
+        repositorio,
+        adapters=FabricaFalsa({k: v for k, v in BASE_PYME.items() if k != "documentos"}),
+        config_fuentes=cargar_config_fuentes(),
+        ahora=Reloj(),
+        dormir=lambda s: None,
+        directorio_reglas=tmp_path,
+    )
+    id = servicio.alta(CUIT_PYME, "pyme", 10_000_000, 12, DOCUMENTOS_PYME)
+
+    assert servicio.repositorio.evaluacion(servicio.evaluar(id)).evaluacion.version_reglas == "pyme.v2"
+    assert servicio.reglas("pyme", version=1).id == "pyme.v1"
 
 
 def test_persona_humana_requiere_consentimiento():

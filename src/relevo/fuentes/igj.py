@@ -27,13 +27,22 @@ from pathlib import Path
 from typing import Any
 
 from relevo.consultor import Disponible, ResultadoFuente, SinAntecedentes
-from relevo.fuentes import FuenteCaida
+from relevo.fuentes import FuenteCaida, Variable
 
 SNAPSHOT_POR_DEFECTO = Path(__file__).resolve().parents[3] / "data" / "igj.sqlite"
 
 
 class Igj:
     nombre = "igj"
+    variables = {
+        "razon_social": Variable("texto", "Razón social registrada en IGJ"),
+        "tipo_societario": Variable("texto", "Tipo societario (SA, SRL, SAS...)"),
+        "dada_de_baja": Variable("booleano", "La sociedad figura dada de baja"),
+        "detalle_baja": Variable("texto", "Detalle de la baja"),
+        "fecha_primer_registro": Variable("fecha", "Fecha del primer registro en IGJ"),
+        "antiguedad_anios": Variable("número", "Años desde el primer registro en IGJ"),
+        "periodo_snapshot": Variable("texto", "Semestre del snapshot de IGJ"),
+    }
 
     def __init__(self, ruta: Path = SNAPSHOT_POR_DEFECTO, hoy: Callable[[], date] = date.today):
         self.ruta = ruta

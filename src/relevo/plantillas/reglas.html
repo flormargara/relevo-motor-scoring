@@ -1,46 +1,391 @@
 {% extends "base.html" %}
 {% set seccion = "reglas" %}
-{% block titulo %}Reglas{% endblock %}
+{% block titulo %}Reglas · {{ flujo.nombre }}{% endblock %}
 {% block contenido %}
-<h1>Reglas</h1>
-<p class="sub">Reglas vigentes por segmento (solo lectura). Cada evaluación guarda la versión que usó.</p>
-<div class="acciones" style="margin-bottom: 16px;">
-  {% for seg in segmentos %}
-  <a class="boton {{ 'chip' if seg == segmento }}" href="/reglas?segmento={{ seg }}">{{ "PyME" if seg == "pyme" else "Monotributista" }}</a>
+<div class="acciones" style="margin-bottom: 12px; align-items: center;">
+  {% for f in flujos %}
+  <a class="boton {{ 'chip' if f.id == flujo.id }}" href="/reglas?flujo={{ f.id }}">{{ f.nombre }}</a>
   {% endfor %}
+  <a href="/reglas/{{ flujo.id }}/historial" style="margin-left: auto;">Historial de versiones</a>
 </div>
+<h1>{{ flujo.nombre }} <span class="suave" style="font-weight: 400; font-size: 15px;">· vigente <code>{{ reglas.id }}</code></span></h1>
+<p class="sub">Editás un borrador compartido: se guarda solo y no afecta ninguna evaluación hasta que se publica como una versión nueva. Las evaluaciones ya hechas no cambian.</p>
+{% if borrador and borrador.base != reglas.version %}
+<div class="error">
+  El borrador parte de v{{ borrador.base }}, pero la vigente ya es v{{ reglas.version }}: alguien publicó en el medio.
+  Para seguir, pasalo a v{{ reglas.version }}: conserva su contenido, y los cambios van a mostrar también lo que publicarlo desharía de lo publicado en el medio.
+  <form method="post" action="/reglas/{{ flujo.id }}/borrador/actualizar-base" style="margin-top: 8px;">
+    <button type="submit">Pasar el borrador a v{{ reglas.version }}</button>
+  </form>
+</div>
+{% elif borrador %}
+<div class="aviso">Hay un borrador en curso, guardado el {{ borrador.actualizado_en | fecha }}.</div>
+{% endif %}
+<div id="raiz"></div>
+<div id="ac"></div>
 
-<section class="tarjeta">
-  <h2><code>{{ reglas.id }}</code></h2>
-  <div class="grilla">
-    <dl class="kv">
-      <dt>Killers</dt><dd>{{ reglas.killers | length }}</dd>
-      <dt>Derivaciones</dt><dd>{{ reglas.derivaciones | length }}</dd>
-      <dt>Scorecard</dt><dd><code>{{ reglas.scorecard.modelo }}</code>{% if reglas.scorecard.provisional %} (provisional){% endif %}</dd>
-      <dt>Fuentes</dt><dd>{{ reglas.fuentes | join(", ") }}</dd>
-    </dl>
-    {% if metricas %}
-    <dl class="kv">
-      <dt>AUC</dt><dd>{{ metricas.auc | numero }}</dd>
-      <dt>Gini</dt><dd>{{ metricas.gini | numero }}</dd>
-      <dt>KS</dt><dd>{{ metricas.ks | numero }}</dd>
-      <dt>Default (validación)</dt><dd>{{ metricas.tasa_default_validacion | porcentaje }}</dd>
-    </dl>
-    {% endif %}
-  </div>
-  {% if metricas %}
-  <table style="margin-top: 16px;">
-    <thead><tr><th>Rating</th><th class="num">Participación</th><th class="num">PD media</th><th class="num">Default observado</th></tr></thead>
-    <tbody>{% for r in metricas.por_rating %}
-      <tr><td>{{ r.rating }}</td><td class="num">{{ r.participacion | porcentaje(1) }}</td><td class="num">{{ r.pd_media | porcentaje }}</td><td class="num">{{ r.default_observado | porcentaje }}</td></tr>
-    {% endfor %}</tbody>
-  </table>
-  <p class="suave" style="margin-bottom: 0;">Métricas sobre la muestra de validación de una cartera sintética.</p>
-  {% endif %}
-</section>
+<style>
+  .cond { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; min-height: 36px; resize: vertical; }
+  .cond.ok { border-color: #9fd3b6; } .cond.mal { border-color: var(--rojo); background: #fffafa; }
+  .cond-msg { font-size: 12px; margin-top: 3px; min-height: 16px; overflow-wrap: anywhere; }
+  .cond-msg.ok { color: var(--verde); } .cond-msg.mal { color: var(--rojo); }
+  #ac { position: absolute; z-index: 50; background: #fff; border: 1px solid var(--borde); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 280px; overflow: auto; width: 380px; max-width: calc(100vw - 32px); display: none; font-size: 13px; }
+  #ac > div { padding: 5px 10px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 0 10px; }
+  #ac > div.sel, #ac > div:hover { background: #eef3fd; }
+  #ac code { font-weight: 600; } #ac .t { color: var(--suave); font-size: 11px; } #ac .d { grid-column: 1 / -1; color: var(--suave); font-size: 12px; }
+  .modal-fondo { position: fixed; inset: 0; background: rgba(20,25,35,.45); display: flex; align-items: center; justify-content: center; z-index: 60; }
+  .modal { background: #fff; border-radius: 12px; padding: 20px; width: min(660px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; }
+  .cambio { font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--borde); overflow-wrap: anywhere; }
+  .cambio .antes { color: var(--rojo); text-decoration: line-through; } .cambio .despues { color: var(--verde); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 6px; border-radius: 4px; margin-right: 6px; text-transform: uppercase; }
+  .tag.agregada { background: var(--verde-f); color: var(--verde); } .tag.quitada { background: var(--rojo-f); color: var(--rojo); }
+  .tag.modificada, .tag.orden { background: var(--ambar-f); color: var(--ambar); }
+  .dec-aprobar { background: var(--verde-f) !important; color: var(--verde) !important; }
+  .dec-derivar { background: var(--ambar-f) !important; color: var(--ambar) !important; }
+  .dec-rechazar { background: var(--rojo-f) !important; color: var(--rojo) !important; }
+  button.mini { padding: 2px 8px; font-size: 12px; }
+  .ed { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  .ed .lado { position: sticky; top: 12px; }
+  .ed .paso { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 22px; }
+  .ed .paso:not(:last-child)::before { content: ""; position: absolute; left: 17px; top: 36px; bottom: 0; width: 2px; background: var(--borde); }
+  .ed .nro { width: 36px; height: 36px; border-radius: 50%; background: var(--superficie); border: 2px solid var(--acento); color: var(--acento); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .ed .regla { padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; margin: 2px 0; }
+  .ed .regla:hover { border-color: var(--borde); background: var(--superficie); }
+  .ed .regla.abierta { border-color: var(--acento); background: var(--superficie); }
+  .ed code.c { background: var(--gris-f); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+  .ed .barra-pd { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--borde); margin: 8px 0; }
+  .ed .seg { flex: 1; padding: 10px 4px; text-align: center; cursor: pointer; user-select: none; border-right: 2px solid #fff; min-width: 0; }
+  .ed .seg:last-child { border-right: 0; }
+  .ed .seg strong { display: block; font-size: 18px; }
+  .ed .frase { font-size: 15px; line-height: 2.3; }
+  .ed .frase input, .ed .frase select { display: inline-block; width: auto; padding: 2px 6px; }
+  .ed .frase .campo-cond { display: inline-block; min-width: 240px; vertical-align: top; line-height: 1.5; }
+  @media (max-width: 960px) { .ed { grid-template-columns: 1fr; } .ed .lado { position: static; } }
+</style>
+{% endblock %}
 
-<section class="tarjeta">
-  <h2>YAML</h2>
-  <pre>{{ texto }}</pre>
-</section>
+{% block scripts %}
+<script>
+const DATOS = {{ datos | tojson }};
+const CATALOGO = DATOS.catalogo;
+const clonar = (x) => JSON.parse(JSON.stringify(x));
+function preparar(r) {
+  for (const s of ["killers", "derivaciones"]) {
+    r[s] = (r[s] || []).map((x) => ({ ...x, _k: x._k || x.id, descripcion: x.descripcion || "", si_no_disponible: x.si_no_disponible || "continuar" }));
+  }
+  r.politica.spread_por_rating = r.politica.spread_por_rating || {};
+  r.politica.rechazar_ratings = r.politica.rechazar_ratings || [];
+  r.politica.derivar_ratings = r.politica.derivar_ratings || [];
+  return r;
+}
+let estado = preparar(clonar(DATOS.borrador || DATOS.vigente));
+const BASE = DATOS.base_borrador ?? DATOS.version;
+let nuevos = estado.killers.length + estado.derivaciones.length;
+
+// --- utilidades ---------------------------------------------------------
+function el(tag, attrs = {}, ...hijos) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (v !== null && v !== undefined && v !== false) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const h of hijos.flat(3)) {
+    if (h === null || h === undefined || h === false) continue;
+    e.append(h.nodeType ? h : document.createTextNode(String(h)));
+  }
+  return e;
+}
+const pct = (x) => (x == null ? "—" : (x * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 }) + " %");
+const leer = (o, ruta) => ruta.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
+function escribir(o, ruta, v) { const ks = ruta.split("."); const u = ks.pop(); ks.reduce((a, k) => (a[k] ||= {}), o)[u] = v; }
+const SI_NO_DISP = [["continuar", "continuar"], ["derivar", "derivar"], ["rechazar", "rechazar"]];
+function CAP() {
+  return estado.politica.capacidad_pago.tipo === "porcentaje_ventas"
+    ? { tipo: "porcentaje_ventas", rutaParam: "politica.capacidad_pago.porcentaje_cuota", rutaVar: "politica.capacidad_pago.ventas_anuales", etqVar: "Ventas anuales" }
+    : { tipo: "cuota_ingreso", rutaParam: "politica.capacidad_pago.relacion_cuota_ingreso", rutaVar: "politica.capacidad_pago.categoria", etqVar: "Categoría de monotributo" };
+}
+async function pedir(metodo, url, cuerpo) {
+  const r = await fetch(url, { method: metodo, headers: { "content-type": "application/json" }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
+  return { status: r.status, cuerpo: r.status === 204 ? null : await r.json().catch(() => null) };
+}
+
+// --- borrador: se guarda solo en el servidor, compartido ----------------
+const sinPantalla = () => {
+  const c = clonar(estado);
+  delete c.ratings;
+  for (const s of ["killers", "derivaciones"]) c[s] = c[s].map(({ _k, ...r }) => r);
+  return c;
+};
+// Cada cambio guarda el borrador y le pide al servidor la lista de cambios contra la vigente:
+// el diff es uno solo (diff_reglas), el mismo que se usa al publicar y en el historial.
+let guardado = DATOS.borrador ? "guardado" : "", tGuardar;
+let cambiosServidor = [], errorBorrador = null;
+const avisar = () => oyentes.forEach((f) => f(cambiosServidor.length));
+async function refrescarCambios() {
+  const r = await pedir("POST", `/reglas/${DATOS.flujo}/cambios`, { contenido: sinPantalla() });
+  if (r.status === 200) { cambiosServidor = r.cuerpo.cambios; errorBorrador = null; }
+  else errorBorrador = r.cuerpo?.error || "el borrador todavía no se puede leer";
+  avisar();
+}
+function guardarBorrador() {
+  clearTimeout(tGuardar);
+  guardado = "guardando…"; avisar();
+  tGuardar = setTimeout(async () => {
+    const r = await pedir("PUT", `/reglas/${DATOS.flujo}/borrador`, { contenido: sinPantalla(), base: BASE });
+    guardado = r.status === 204 ? "guardado " + new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "no se pudo guardar";
+    await refrescarCambios();
+  }, 600);
+}
+async function descartar() {
+  if (!confirm("¿Descartar el borrador? Se pierden sus cambios.")) return;
+  await pedir("DELETE", `/reglas/${DATOS.flujo}/borrador`);
+  location.reload();
+}
+
+// --- render y oyentes ---------------------------------------------------
+const oyentes = [];
+function alCambiar(f) { oyentes.push(f); }
+function notificarCambio() { guardarBorrador(); }
+function render() { oyentes.length = 0; ocultarAc(); renderEditor(); avisar(); }
+function cambioEstructural() { render(); guardarBorrador(); }
+
+// --- operaciones sobre el borrador --------------------------------------
+function agregarRegla(sec) {
+  nuevos++;
+  estado[sec].push({ _k: "nuevo-" + nuevos, id: "nueva_regla_" + nuevos, descripcion: "", condicion: "", si_no_disponible: "continuar" });
+  cambioEstructural();
+}
+function quitarRegla(sec, k) { estado[sec] = estado[sec].filter((r) => r._k !== k); cambioEstructural(); }
+function moverRegla(sec, k, d) {
+  const a = estado[sec]; const i = a.findIndex((r) => r._k === k); const j = i + d;
+  if (j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]]; cambioEstructural();
+}
+function decision(reglas, n) {
+  const p = reglas.politica;
+  return p.rechazar_ratings.includes(n) ? "rechazar" : p.derivar_ratings.includes(n) ? "derivar" : "aprobar";
+}
+function fijarDecision(n, d) {
+  const p = estado.politica;
+  p.rechazar_ratings = p.rechazar_ratings.filter((x) => x !== n);
+  p.derivar_ratings = p.derivar_ratings.filter((x) => x !== n);
+  if (d === "rechazar") p.rechazar_ratings.push(n);
+  if (d === "derivar") p.derivar_ratings.push(n);
+}
+function fijarSpread(n, v) { const s = estado.politica.spread_por_rating; if (v == null) delete s[n]; else s[n] = v; }
+
+// --- campos -------------------------------------------------------------
+function campoTexto(obtener, fijar, attrs = {}) {
+  const i = el("input", attrs); i.value = obtener() ?? "";
+  i.addEventListener("input", () => { fijar(i.value); notificarCambio(); });
+  return i;
+}
+function campoNumero(obtener, fijar, { pct: esPct = false, ancho } = {}) {
+  const i = el("input", { type: "number", step: "any", style: ancho ? `width:${ancho}` : null });
+  const v = obtener(); i.value = v == null ? "" : esPct ? +(v * 100).toFixed(4) : v;
+  i.addEventListener("input", () => {
+    const x = i.value === "" ? null : parseFloat(i.value);
+    fijar(x == null ? null : esPct ? +(x / 100).toFixed(6) : x); notificarCambio();
+  });
+  return i;
+}
+function selector(opciones, obtener, fijar, attrs = {}) {
+  const s = el("select", attrs, opciones.map(([v, t]) => el("option", { value: v }, t)));
+  s.value = obtener();
+  s.addEventListener("change", () => { fijar(s.value); notificarCambio(); });
+  return s;
+}
+
+// --- validación contra el catálogo del flujo (servidor) -----------------
+const cacheValidacion = new Map();
+function validar(texto) {
+  if (!cacheValidacion.has(texto))
+    cacheValidacion.set(texto, pedir("POST", "/reglas/validar", { flujo: DATOS.flujo, condicion: texto }).then((r) => r.cuerpo));
+  return cacheValidacion.get(texto);
+}
+function campoCondicion(valor, fijar, { filas = 2 } = {}) {
+  const ta = el("textarea", { class: "cond", rows: filas, spellcheck: "false" }); ta.value = valor || "";
+  const msg = el("div", { class: "cond-msg" });
+  let t;
+  const revisar = async () => {
+    const texto = ta.value; const r = await validar(texto);
+    if (ta.value !== texto) return;
+    ta.classList.toggle("ok", r.ok); ta.classList.toggle("mal", !r.ok);
+    msg.className = "cond-msg " + (r.ok ? "ok" : "mal");
+    msg.textContent = r.ok ? "✓ Válida · usa " + (r.usa.length ? r.usa.join(", ") : "solo constantes") : "✗ " + r.error;
+  };
+  ta.addEventListener("input", () => { fijar(ta.value); clearTimeout(t); t = setTimeout(revisar, 250); autocompletar(ta); notificarCambio(); });
+  ta.addEventListener("keydown", (e) => teclaAutocompletar(e, ta));
+  ta.addEventListener("blur", () => setTimeout(ocultarAc, 150));
+  revisar();
+  return el("div", { class: "campo-cond" }, ta, msg);
+}
+
+// --- autocompletado -----------------------------------------------------
+const ac = document.getElementById("ac");
+let acItems = [], acSel = 0, acTa = null, acPrefijo = "";
+function autocompletar(ta) {
+  const m = /([a-z_]+(?:\.[a-z_0-9]*)?)$/i.exec(ta.value.slice(0, ta.selectionStart));
+  if (!m || m[1].length < 2) return ocultarAc();
+  const p = m[1].toLowerCase();
+  acItems = CATALOGO.filter((v) => v.nombre.startsWith(p))
+    .concat(CATALOGO.filter((v) => !v.nombre.startsWith(p) && v.nombre.includes(p))).slice(0, 8);
+  if (!acItems.length || (acItems.length === 1 && acItems[0].nombre === p)) return ocultarAc();
+  acTa = ta; acPrefijo = m[1]; acSel = 0; pintarAc();
+  const r = ta.getBoundingClientRect();
+  ac.style.left = Math.max(scrollX + 8, Math.min(r.left + scrollX, scrollX + innerWidth - 396)) + "px";
+  ac.style.top = r.bottom + scrollY + 2 + "px";
+  ac.style.display = "block";
+}
+function pintarAc() {
+  ac.replaceChildren(...acItems.map((v, i) => el("div", { class: i === acSel ? "sel" : "", onmousedown: (e) => { e.preventDefault(); elegirAc(i); } },
+    el("code", {}, v.nombre), el("span", { class: "t" }, v.tipo), el("span", { class: "d" }, v.descripcion))));
+}
+function ocultarAc() { ac.style.display = "none"; acTa = null; }
+function elegirAc(i) {
+  const ta = acTa; if (!ta) return;
+  const pos = ta.selectionStart; const ini = pos - acPrefijo.length; const nombre = acItems[i].nombre;
+  ta.value = ta.value.slice(0, ini) + nombre + ta.value.slice(pos);
+  ta.setSelectionRange(ini + nombre.length, ini + nombre.length);
+  ocultarAc(); ta.dispatchEvent(new Event("input")); ta.focus();
+}
+function teclaAutocompletar(e, ta) {
+  if (ac.style.display !== "block" || acTa !== ta) return;
+  if (e.key === "ArrowDown") { acSel = (acSel + 1) % acItems.length; pintarAc(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { acSel = (acSel - 1 + acItems.length) % acItems.length; pintarAc(); e.preventDefault(); }
+  else if (e.key === "Enter" || e.key === "Tab") { elegirAc(acSel); e.preventDefault(); }
+  else if (e.key === "Escape") ocultarAc();
+}
+
+// --- cambios contra la vigente: los calcula el servidor -----------------
+function listaCambios() {
+  const aviso = errorBorrador
+    ? el("p", { class: "cond-msg mal", style: "margin:0 0 6px" }, "Todavía no se puede leer el borrador: " + errorBorrador + ". Se muestran los últimos cambios válidos.")
+    : null;
+  if (!cambiosServidor.length) return el("div", {}, aviso, el("p", { class: "suave", style: "margin:0" }, "Sin cambios respecto de la versión vigente."));
+  return el("div", {}, aviso, cambiosServidor.map((c) => el("div", { class: "cambio" },
+    el("span", { class: "tag " + c.tipo }, c.tipo), el("strong", {}, c.que), " ",
+    c.antes !== null ? el("span", { class: "antes" }, String(c.antes)) : null,
+    c.antes !== null && c.despues !== null ? " → " : null,
+    c.despues !== null ? el("span", { class: "despues" }, String(c.despues)) : null)));
+}
+
+// --- publicar: valida el servidor ---------------------------------------
+function abrirPublicar() {
+  const fondo = el("div", { class: "modal-fondo", onclick: (e) => { if (e.target === fondo) fondo.remove(); } });
+  const autor = el("input", { placeholder: "Tu nombre" });
+  const motivo = el("textarea", { rows: 3, placeholder: "Por qué cambia la política (queda en el historial)" });
+  const res = el("div");
+  const publicar = el("button", { class: "primario", onclick: async () => {
+    publicar.disabled = true;
+    const r = await pedir("POST", `/reglas/${DATOS.flujo}/publicar`, { contenido: sinPantalla(), base: BASE, autor: autor.value, motivo: motivo.value });
+    publicar.disabled = false;
+    if (r.status === 200) { location.href = `/reglas/${DATOS.flujo}/historial`; return; }
+    res.replaceChildren(el("div", { class: "error" }, el("strong", {}, r.status === 409 ? "Conflicto: " : "No se puede publicar: "), r.cuerpo?.error || "error inesperado"));
+  } }, "Publicar");
+  fondo.append(el("div", { class: "modal" },
+    el("h2", {}, `Publicar ${DATOS.nombre} v${DATOS.version + 1}`),
+    el("p", { class: "suave", style: "margin-top:-6px" }, `Parte de v${BASE}. Pasa a ser la vigente para las evaluaciones nuevas; las ya hechas no cambian.`),
+    el("h3", {}, "Cambios"), listaCambios(),
+    el("div", { style: "margin-top:14px" }, el("label", {}, "Autor"), autor),
+    el("div", { style: "margin-top:8px" }, el("label", {}, "Motivo"), motivo),
+    el("div", { style: "margin-top:12px" }, res),
+    el("div", { class: "acciones", style: "margin-top:12px;justify-content:flex-end" }, el("button", { onclick: () => fondo.remove() }, "Cancelar"), publicar)));
+  document.body.append(fondo);
+  autor.focus();
+}
+
+// --- el editor: el flujo se lee como una política escrita ----------------
+let abierta = null, detallesAbiertos = false;
+function renderEditor() {
+  const raiz = document.getElementById("raiz"); raiz.className = "ed";
+
+  const regla = (sec, r, i) => {
+    const verbo = sec === "killers" ? "Rechaza" : "Deriva", esta = abierta === r._k;
+    const caja = el("div", { class: "regla" + (esta ? " abierta" : "") },
+      el("div", { style: "display:flex;gap:8px;align-items:baseline;cursor:pointer", onclick: () => { abierta = esta ? null : r._k; render(); } },
+        el("span", { class: "suave", style: "font-size:12px;min-width:18px" }, sec === "killers" ? i + 1 + "." : "•"),
+        el("div", { style: "flex:1;min-width:0" },
+          el("strong", { style: `color:var(--${sec === "killers" ? "rojo" : "ambar"})` }, verbo + " si "),
+          el("code", { class: "c" }, r.condicion || "(sin condición)"),
+          el("div", { class: "suave", style: "font-size:13px" }, r.descripcion || "(sin descripción)", r.si_no_disponible !== "continuar" ? ` · si falta el dato: ${r.si_no_disponible}` : "")),
+        el("span", { class: "suave", style: "font-size:12px" }, esta ? "cerrar" : "editar")));
+    if (esta) caja.append(el("div", { style: "margin-top:10px;display:grid;gap:8px" },
+      el("div", { class: "grilla" },
+        el("div", {}, el("label", {}, "Id"), campoTexto(() => r.id, (v) => (r.id = v), { style: "font-family:ui-monospace,monospace" })),
+        el("div", {}, el("label", {}, "Si una fuente no responde"), selector(SI_NO_DISP, () => r.si_no_disponible, (v) => (r.si_no_disponible = v)))),
+      el("div", {}, el("label", {}, "Descripción (la ve el analista en la traza)"), campoTexto(() => r.descripcion, (v) => (r.descripcion = v))),
+      el("div", {}, el("label", {}, verbo + " si…"), campoCondicion(r.condicion, (v) => (r.condicion = v), { filas: 3 })),
+      el("div", { class: "acciones" },
+        el("button", { class: "mini", onclick: () => moverRegla(sec, r._k, -1) }, "↑ Antes"),
+        el("button", { class: "mini", onclick: () => moverRegla(sec, r._k, 1) }, "↓ Después"),
+        el("button", { class: "mini peligro", onclick: () => quitarRegla(sec, r._k) }, "Quitar"),
+        el("button", { class: "mini", onclick: () => { abierta = null; render(); } }, "Listo"))));
+    return caja;
+  };
+  const paso = (n, titulo, ...cont) => el("div", { class: "paso" }, el("div", { class: "nro" }, n), el("div", {}, el("h2", { style: "margin-top:7px" }, titulo), ...cont));
+  const nueva = (sec, txt) => el("button", { class: "mini", style: "margin-top:6px", onclick: () => { agregarRegla(sec); abierta = estado[sec].at(-1)._k; render(); } }, txt);
+
+  // Los ratings y sus topes los define el modelo (pérdida esperada teórica): no se editan.
+  const etqDec = { aprobar: "Aprueba", derivar: "Deriva", rechazar: "Rechaza" }, sig = { aprobar: "derivar", derivar: "rechazar", rechazar: "aprobar" };
+  const desde = (i) => (i ? estado.ratings[i - 1].pd_hasta : 0);
+  const barra = el("div", { class: "barra-pd" }, estado.ratings.map((r, i) => {
+    const d = decision(estado, r.rating);
+    return el("div", { class: "seg dec-" + d, title: "Clic para cambiar la decisión", onclick: () => { fijarDecision(r.rating, sig[d]); cambioEstructural(); } },
+      el("strong", {}, r.rating), el("div", { style: "font-size:11px" }, `PD ${pct(desde(i))}–${pct(r.pd_hasta)}`),
+      el("div", { style: "font-size:12px;font-weight:700" }, etqDec[d]));
+  }));
+  const m = DATOS.metricas || {};
+  const porRating = Object.fromEntries((m.por_rating || []).map((x) => [x.rating, x]));
+  const teoricos = el("table", { style: "margin-top:4px;font-size:13px" },
+    el("thead", {}, el("tr", {}, el("th", {}, "Rating"), el("th", { class: "num" }, "PD (rango)"), el("th", { class: "num" }, "PD media"),
+      el("th", { class: "num" }, "Default observado"), el("th", { class: "num" }, "Participación"), el("th", { class: "num" }, "Pérdida esperada teórica"))),
+    el("tbody", {}, estado.ratings.map((r, i) => {
+      const x = porRating[r.rating] || {};
+      return el("tr", {}, el("td", {}, el("strong", {}, r.rating)), el("td", { class: "num" }, `${pct(desde(i))}–${pct(r.pd_hasta)}`),
+        el("td", { class: "num" }, pct(x.pd_media)), el("td", { class: "num" }, pct(x.default_observado)), el("td", { class: "num" }, pct(x.participacion)),
+        el("td", { class: "num suave" }, "pendiente"));
+    })));
+  const calidad = m.auc != null ? `AUC ${m.auc} · Gini ${m.gini} · KS ${m.ks}. ` : "";
+
+  const cap = CAP(), p = estado.politica;
+  const n = (get, set, o) => campoNumero(get, set, o);
+  const cond = (ruta) => campoCondicion(leer(estado, ruta), (v) => escribir(estado, ruta, v), { filas: 1 });
+  const conOferta = estado.ratings.filter((r) => decision(estado, r.rating) !== "rechazar");
+  const spreads = conOferta.flatMap((r, i) => [i ? (i === conOferta.length - 1 ? " y " : ", ") : "", el("strong", {}, r.rating), " ",
+    n(() => p.spread_por_rating[r.rating], (v) => fijarSpread(r.rating, v), { ancho: "70px" }), " pp"]);
+  const frase = el("div", { class: "frase" },
+    "La tasa es ", cond("politica.tasa_base"), " más el spread del rating: ", spreads, ".", el("br"),
+    "La cuota no supera el ", n(() => leer(estado, cap.rutaParam), (v) => escribir(estado, cap.rutaParam, v), { pct: true, ancho: "80px" }),
+    cap.tipo === "porcentaje_ventas" ? " % de las ventas mensuales, que salen de " : " % del ingreso mensual estimado según la categoría ", cond(cap.rutaVar), ".", el("br"),
+    "El monto mínimo es $ ", n(() => p.monto_minimo, (v) => (p.monto_minimo = v), { ancho: "130px" }), ", redondeado a $ ", n(() => p.redondeo_monto, (v) => (p.redondeo_monto = v), { ancho: "90px" }), ".", el("br"),
+    "El plazo va de ", n(() => p.plazo_meses.minimo, (v) => (p.plazo_meses.minimo = v), { ancho: "70px" }), " a ", n(() => p.plazo_meses.maximo, (v) => (p.plazo_meses.maximo = v), { ancho: "70px" }), " meses.", el("br"),
+    "Si falta un dato para armar la oferta, ", selector(SI_NO_DISP, () => p.si_no_disponible, (v) => (p.si_no_disponible = v)), ".");
+
+  const lado = el("aside", { class: "lado tarjeta" });
+  alCambiar((k) => lado.replaceChildren(
+    el("div", { style: "font-weight:700" }, DATOS.nombre),
+    el("div", { class: "suave", style: "font-size:13px;margin-bottom:8px" }, `Borrador sobre v${BASE}`, guardado ? ` · ${guardado}` : ""),
+    el("h3", { style: "margin-top:0" }, k ? `${k} cambio${k > 1 ? "s" : ""}` : "Sin cambios"),
+    el("div", { style: "font-size:12px;max-height:55vh;overflow:auto" }, listaCambios()),
+    el("div", { class: "acciones", style: "margin-top:12px" },
+      el("button", { class: "primario", onclick: abrirPublicar, disabled: !k && !errorBorrador }, `Publicar v${DATOS.version + 1}…`),
+      el("button", { onclick: descartar, disabled: !DATOS.borrador && !k }, "Descartar"))));
+
+  raiz.replaceChildren(el("div", {},
+    paso(1, "Killers: rechazan y cortan, en este orden", ...estado.killers.map((r, i) => regla("killers", r, i)), nueva("killers", "+ Killer")),
+    paso(2, "Derivaciones: mandan el caso a un analista", ...estado.derivaciones.map((r, i) => regla("derivaciones", r, i)), nueva("derivaciones", "+ Derivación")),
+    paso(3, "Scorecard → rating → decisión",
+      el("p", { class: "suave", style: "margin:0" }, "El modelo ", el("code", {}, estado.scorecard.modelo),
+        ` calcula la PD y la ubica en un rating. ${calidad}Los ratings y sus topes los define el modelo y no se editan. Clic en un rating para decidir si aprueba, deriva o rechaza.`),
+      barra,
+      el("details", { open: detallesAbiertos, ontoggle: (e) => (detallesAbiertos = e.target.open) },
+        el("summary", {}, "Valores teóricos del modelo por rating"), teoricos,
+        el("p", { class: "suave", style: "font-size:12px" }, "Métricas sobre la muestra de validación de una cartera sintética."))),
+    paso(4, "Oferta", el("p", { class: "suave", style: "margin:0" }, "Se arma solo para los ratings que aprueban o derivan."), frase)), lado);
+}
+render();
+if (DATOS.borrador) refrescarCambios();
+</script>
 {% endblock %}

@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from relevo.consultor import Disponible, ResultadoFuente, SinAntecedentes
-from relevo.fuentes import FuenteCaida
+from relevo.fuentes import FuenteCaida, Variable
 
 SNAPSHOT_POR_DEFECTO = Path(__file__).resolve().parents[3] / "data" / "arca.sqlite"
 
@@ -75,6 +75,19 @@ ACTIVIDAD_MONOTRIBUTO = {
 
 class Arca:
     nombre = "arca"
+    variables = {
+        "denominacion": Variable("texto", "Denominación en el padrón de ARCA"),
+        "ganancias": Variable("texto", "Condición en Ganancias"),
+        "iva": Variable("texto", "Condición en IVA"),
+        "es_monotributista": Variable("booleano", "Adherido al monotributo"),
+        "categoria_monotributo": Variable("texto", "Categoría de monotributo (A a K)"),
+        "tipo_monotributo": Variable("texto", "Tipo de monotributo (general, social...)"),
+        "actividad_monotributo": Variable("texto", "Actividad del monotributo"),
+        "empleador": Variable("booleano", "Es empleador"),
+        "integrante_sociedad": Variable("booleano", "Integra una sociedad"),
+        "inscripcion_vigente": Variable("booleano", "Tiene inscripción vigente en Ganancias, IVA o monotributo"),
+        "fecha_padron": Variable("fecha", "Fecha del padrón consultado"),
+    }
 
     def __init__(self, ruta: Path = SNAPSHOT_POR_DEFECTO):
         self.ruta = ruta

@@ -31,11 +31,19 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
-from relevo.reglas import DIRECTORIO_MODELOS, cargar_reglas
+from relevo.reglas import DIRECTORIO_MODELOS
 
 SEMILLA = 2026
 FILAS = 40_000
 ESCALA = {"puntos_base": 600, "odds_base": 50, "pdo": 20}
+# Los ratings son del modelo (ADR 0007): sus topes de PD se exportan junto con el scorecard.
+RATINGS = [
+    {"rating": "A", "pd_hasta": 0.02},
+    {"rating": "B", "pd_hasta": 0.05},
+    {"rating": "C", "pd_hasta": 0.10},
+    {"rating": "D", "pd_hasta": 0.20},
+    {"rating": "E", "pd_hasta": 1.0},
+]
 
 
 @dataclass(frozen=True)
@@ -191,6 +199,7 @@ def entrenar(segmento: str, cartera: pd.DataFrame, version: int, semilla: int = 
         "nota": "Entrenado sobre una cartera SINTÉTICA. Sirve para la demo, no para decidir créditos reales.",
         "generado_con": f"python -m relevo.sintetico {segmento} --version {version} --semilla {semilla}",
         "escala": ESCALA,
+        "ratings": RATINGS,
         "caracteristicas": caracteristicas,
     }
     resultado["metricas"] = medir(resultado, valida, segmento)
@@ -228,20 +237,19 @@ def medir(modelo: dict[str, Any], valida: pd.DataFrame, segmento: str) -> dict[s
     malos = np.cumsum(default.to_numpy()[orden]) / default.sum()
     buenos = np.cumsum(1 - default.to_numpy()[orden]) / (1 - default).sum()
 
-    ratings = cargar_reglas(segmento, version=1).ratings
     por_rating = []
     desde = 0.0
-    for rating in ratings:
-        en_rating = (pd_estimada > desde) & (pd_estimada <= rating.pd_hasta)
+    for rating in modelo["ratings"]:
+        en_rating = (pd_estimada > desde) & (pd_estimada <= rating["pd_hasta"])
         por_rating.append(
             {
-                "rating": rating.nombre,
+                "rating": rating["rating"],
                 "participacion": round(float(en_rating.mean()), 4),
                 "pd_media": round(float(pd_estimada[en_rating].mean()), 4) if en_rating.any() else None,
                 "default_observado": round(float(default[en_rating].mean()), 4) if en_rating.any() else None,
             }
         )
-        desde = rating.pd_hasta
+        desde = rating["pd_hasta"]
     return {
         "filas_validacion": int(len(valida)),
         "tasa_default_validacion": round(float(default.mean()), 4),
