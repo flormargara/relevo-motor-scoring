@@ -22,6 +22,7 @@ import httpx
 import yaml
 
 from relevo import agentes, identificacion
+from relevo.catalogo import flujo_de_originacion
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
@@ -204,7 +205,7 @@ class Servicio:
 
     def evaluar(self, solicitud_id: str) -> int:
         guardada = self.repositorio.solicitud(solicitud_id)
-        reglas = self.reglas(guardada.solicitud.segmento)
+        reglas = self.reglas(flujo_de_originacion(guardada.solicitud.segmento).id)
         consultor = ConsultorReal(
             identificacion=guardada.solicitud.cuit,
             adapters=self.adapters(guardada),

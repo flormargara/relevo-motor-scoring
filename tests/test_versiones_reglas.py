@@ -141,3 +141,61 @@ def test_publicar_y_descartar_cierran_el_borrador(tmp_path: Path):
     versiones.guardar_borrador("pyme", contenido_v1(), base=2)
     versiones.descartar_borrador("pyme")
     assert versiones.borrador("pyme") is None
+
+
+def test_completar_valores_por_defecto_no_cuenta_como_cambio(tmp_path: Path):
+    versiones = VersionesReglas(Repositorio())
+    versiones.importar(semilla(tmp_path, 1))
+    igual = contenido_v1()
+    for seccion in ("killers", "derivaciones"):
+        for regla in igual[seccion]:
+            regla.setdefault("si_no_disponible", "continuar")  # lo que agrega el editor al cargar
+    igual["politica"].setdefault("derivar_ratings", [])
+
+    with pytest.raises(ReglasInvalidas, match="no tiene cambios"):
+        versiones.publicar("pyme", igual, autor="Ana", motivo="x", base=1)
+
+
+def test_los_cambios_del_borrador_contra_la_vigente(tmp_path: Path):
+    versiones = VersionesReglas(Repositorio())
+    versiones.importar(semilla(tmp_path, 1))
+    borrador = contenido_v1()
+    borrador["politica"]["derivar_ratings"] = ["D"]
+
+    assert [(c.que, c.antes, c.despues) for c in versiones.cambios("pyme", borrador)] == [
+        ("Rating D · decisión", "aprueba", "deriva")
+    ]
+
+
+def test_un_borrador_viejo_se_puede_pasar_a_la_vigente_y_muestra_lo_que_pisaria(tmp_path: Path):
+    versiones = VersionesReglas(Repositorio())
+    versiones.importar(semilla(tmp_path, 1))
+    otro = contenido_v1()
+    otro["politica"]["monto_minimo"] = 2_000_000
+    versiones.publicar("pyme", otro, autor="Beto", motivo="sube el mínimo", base=1)  # v2
+    mio = contenido_v1()  # una pestaña abierta desde antes sigue guardando sobre v1
+    mio["politica"]["derivar_ratings"] = ["D"]
+    versiones.guardar_borrador("pyme", mio, base=1)
+
+    versiones.actualizar_base_del_borrador("pyme")
+
+    assert versiones.borrador("pyme").base == 2
+    assert [c.que for c in versiones.cambios("pyme", versiones.borrador("pyme").contenido)] == [
+        "Rating D · decisión",
+        "Política · monto mínimo",  # publicarlo así deshace lo de Beto: queda a la vista
+    ]
+
+
+def test_volver_atras_es_cargar_una_version_vieja_en_el_borrador(tmp_path: Path):
+    versiones = VersionesReglas(Repositorio())
+    versiones.importar(semilla(tmp_path, 1))
+    cambiado = contenido_v1()
+    cambiado["politica"]["derivar_ratings"] = ["D"]
+    versiones.publicar("pyme", cambiado, autor="Ana", motivo="x", base=1)
+
+    versiones.cargar_version_en_el_borrador("pyme", 1)
+    borrador = versiones.borrador("pyme")
+    versiones.publicar("pyme", borrador.contenido, autor="Ana", motivo="vuelvo a v1", base=borrador.base)
+
+    assert versiones.reglas("pyme").id == "pyme.v3"
+    assert versiones.reglas("pyme").politica.derivar_ratings == ()

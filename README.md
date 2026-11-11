@@ -11,9 +11,10 @@ El alcance acordado está en [docs/acuerdos-demo-v1.md](docs/acuerdos-demo-v1.md
 ## Estructura
 
 - `src/relevo/`: el código. `motor.evaluar` es la entrada del motor (ver [docs/diseno-modulos.md](docs/diseno-modulos.md)). El flujo del motor y sus inputs están en [docs/motor-flujo.md](docs/motor-flujo.md) y el esquema de la base en [docs/der.md](docs/der.md).
-- `rules/`: reglas versionadas por segmento (`pyme.v1.yaml`, `monotributista.v1.yaml`).
+- `rules/`: semilla de las reglas de cada flujo (`pyme.v3.yaml`, `monotributista.v3.yaml`). Las reglas viven en la base y se editan desde la pantalla **Reglas**: al arrancar se importan las versiones de `rules/` que falten, sin pisar ninguna (ADR 0007).
+- `config/flujos.yaml`: los flujos del motor y las fuentes que consulta cada uno (de ahí sale el catálogo de variables que pueden usar sus reglas).
 - `config/`: configuración técnica de las fuentes (`fuentes.yaml`) y datos de las fuentes de juguete (`juguete.yaml`).
-- `modelos/`: puntos del scorecard por segmento (provisionales hasta entrenar con la cartera sintética).
+- `modelos/`: el scorecard de cada segmento, con sus ratings y topes de PD (los ratings son del modelo, no se editan desde la app).
 - `tests/`: pytest.
 
 ## Correr la app

@@ -11,7 +11,13 @@
 <h1>{{ flujo.nombre }} <span class="suave" style="font-weight: 400; font-size: 15px;">· vigente <code>{{ reglas.id }}</code></span></h1>
 <p class="sub">Editás un borrador compartido: se guarda solo y no afecta ninguna evaluación hasta que se publica como una versión nueva. Las evaluaciones ya hechas no cambian.</p>
 {% if borrador and borrador.base != reglas.version %}
-<div class="error">El borrador parte de v{{ borrador.base }}, pero la vigente ya es v{{ reglas.version }}: alguien publicó en el medio. Revisá los cambios o descartá el borrador.</div>
+<div class="error">
+  El borrador parte de v{{ borrador.base }}, pero la vigente ya es v{{ reglas.version }}: alguien publicó en el medio.
+  Para seguir, pasalo a v{{ reglas.version }}: conserva su contenido, y los cambios van a mostrar también lo que publicarlo desharía de lo publicado en el medio.
+  <form method="post" action="/reglas/{{ flujo.id }}/borrador/actualizar-base" style="margin-top: 8px;">
+    <button type="submit">Pasar el borrador a v{{ reglas.version }}</button>
+  </form>
+</div>
 {% elif borrador %}
 <div class="aviso">Hay un borrador en curso, guardado el {{ borrador.actualizado_en | fecha }}.</div>
 {% endif %}
@@ -72,7 +78,6 @@ function preparar(r) {
   r.politica.derivar_ratings = r.politica.derivar_ratings || [];
   return r;
 }
-const ORIGINAL = preparar(clonar(DATOS.vigente));
 let estado = preparar(clonar(DATOS.borrador || DATOS.vigente));
 const BASE = DATOS.base_borrador ?? DATOS.version;
 let nuevos = estado.killers.length + estado.derivaciones.length;
@@ -112,15 +117,25 @@ const sinPantalla = () => {
   for (const s of ["killers", "derivaciones"]) c[s] = c[s].map(({ _k, ...r }) => r);
   return c;
 };
+// Cada cambio guarda el borrador y le pide al servidor la lista de cambios contra la vigente:
+// el diff es uno solo (diff_reglas), el mismo que se usa al publicar y en el historial.
 let guardado = DATOS.borrador ? "guardado" : "", tGuardar;
+let cambiosServidor = [], errorBorrador = null;
+const avisar = () => oyentes.forEach((f) => f(cambiosServidor.length));
+async function refrescarCambios() {
+  const r = await pedir("POST", `/reglas/${DATOS.flujo}/cambios`, { contenido: sinPantalla() });
+  if (r.status === 200) { cambiosServidor = r.cuerpo.cambios; errorBorrador = null; }
+  else errorBorrador = r.cuerpo?.error || "el borrador todavía no se puede leer";
+  avisar();
+}
 function guardarBorrador() {
   clearTimeout(tGuardar);
-  guardado = "guardando…"; oyentes.forEach((f) => f(cambios().length));
+  guardado = "guardando…"; avisar();
   tGuardar = setTimeout(async () => {
     const r = await pedir("PUT", `/reglas/${DATOS.flujo}/borrador`, { contenido: sinPantalla(), base: BASE });
     guardado = r.status === 204 ? "guardado " + new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "no se pudo guardar";
-    oyentes.forEach((f) => f(cambios().length));
-  }, 800);
+    await refrescarCambios();
+  }, 600);
 }
 async function descartar() {
   if (!confirm("¿Descartar el borrador? Se pierden sus cambios.")) return;
@@ -131,8 +146,8 @@ async function descartar() {
 // --- render y oyentes ---------------------------------------------------
 const oyentes = [];
 function alCambiar(f) { oyentes.push(f); }
-function notificarCambio() { guardarBorrador(); const n = cambios().length; oyentes.forEach((f) => f(n)); }
-function render() { oyentes.length = 0; ocultarAc(); renderEditor(); const n = cambios().length; oyentes.forEach((f) => f(n)); }
+function notificarCambio() { guardarBorrador(); }
+function render() { oyentes.length = 0; ocultarAc(); renderEditor(); avisar(); }
 function cambioEstructural() { render(); guardarBorrador(); }
 
 // --- operaciones sobre el borrador --------------------------------------
@@ -243,47 +258,17 @@ function teclaAutocompletar(e, ta) {
   else if (e.key === "Escape") ocultarAc();
 }
 
-// --- cambios contra la vigente (vista previa; el diff oficial del historial lo calcula el servidor) ---
-function cambios() {
-  const out = []; const etq = { killers: "Killer", derivaciones: "Derivación" };
-  for (const sec of ["killers", "derivaciones"]) {
-    const a = ORIGINAL[sec], b = estado[sec];
-    const ma = new Map(a.map((r) => [r._k, r])), mb = new Map(b.map((r) => [r._k, r]));
-    for (const r of b) if (!ma.has(r._k)) out.push({ tipo: "agregada", que: `${etq[sec]} ${r.id}`, despues: r.condicion || "(sin condición)" });
-    for (const r of a) if (!mb.has(r._k)) out.push({ tipo: "quitada", que: `${etq[sec]} ${r.id}`, antes: r.condicion });
-    for (const r of b) {
-      const o = ma.get(r._k); if (!o) continue;
-      for (const c of ["id", "descripcion", "condicion", "si_no_disponible"])
-        if ((o[c] ?? "") !== (r[c] ?? "")) out.push({ tipo: "modificada", que: `${etq[sec]} ${o.id} · ${c}`, antes: o[c], despues: r[c] });
-    }
-    const comunes = (x, m) => x.filter((r) => m.has(r._k));
-    if (comunes(a, mb).map((r) => r._k).join() !== comunes(b, ma).map((r) => r._k).join())
-      out.push({ tipo: "orden", que: `Orden de ${sec}`, antes: comunes(a, mb).map((r) => r.id).join(" → "), despues: comunes(b, ma).map((r) => r.id).join(" → ") });
-  }
-  for (const r of estado.ratings) {
-    const n = r.rating, d0 = decision(ORIGINAL, n), d1 = decision(estado, n);
-    if (d0 !== d1) out.push({ tipo: "modificada", que: `Rating ${n} · decisión`, antes: d0, despues: d1 });
-    const s0 = ORIGINAL.politica.spread_por_rating[n] ?? null, s1 = estado.politica.spread_por_rating[n] ?? null;
-    if (s0 !== s1) out.push({ tipo: "modificada", que: `Rating ${n} · spread (pp)`, antes: s0 ?? "—", despues: s1 ?? "—" });
-  }
-  const cap = CAP();
-  const campos = [["politica.tasa_base", "Tasa base"], [cap.rutaVar, cap.etqVar], [cap.rutaParam, "Cuota máxima"],
-    ["politica.monto_minimo", "Monto mínimo"], ["politica.redondeo_monto", "Redondeo"], ["politica.plazo_meses.minimo", "Plazo mínimo"],
-    ["politica.plazo_meses.maximo", "Plazo máximo"], ["politica.si_no_disponible", "Si falta un dato de la oferta"]];
-  for (const [ruta, e] of campos) {
-    const o = leer(ORIGINAL, ruta), n = leer(estado, ruta);
-    if ((o ?? null) !== (n ?? null)) out.push({ tipo: "modificada", que: `Oferta · ${e}`, antes: o ?? "—", despues: n ?? "—" });
-  }
-  return out;
-}
+// --- cambios contra la vigente: los calcula el servidor -----------------
 function listaCambios() {
-  const cs = cambios();
-  if (!cs.length) return el("p", { class: "suave", style: "margin:0" }, "Sin cambios respecto de la versión vigente.");
-  return el("div", {}, cs.map((c) => el("div", { class: "cambio" },
+  const aviso = errorBorrador
+    ? el("p", { class: "cond-msg mal", style: "margin:0 0 6px" }, "Todavía no se puede leer el borrador: " + errorBorrador + ". Se muestran los últimos cambios válidos.")
+    : null;
+  if (!cambiosServidor.length) return el("div", {}, aviso, el("p", { class: "suave", style: "margin:0" }, "Sin cambios respecto de la versión vigente."));
+  return el("div", {}, aviso, cambiosServidor.map((c) => el("div", { class: "cambio" },
     el("span", { class: "tag " + c.tipo }, c.tipo), el("strong", {}, c.que), " ",
-    c.antes !== undefined ? el("span", { class: "antes" }, String(c.antes)) : null,
-    c.antes !== undefined && c.despues !== undefined ? " → " : null,
-    c.despues !== undefined ? el("span", { class: "despues" }, String(c.despues)) : null)));
+    c.antes !== null ? el("span", { class: "antes" }, String(c.antes)) : null,
+    c.antes !== null && c.despues !== null ? " → " : null,
+    c.despues !== null ? el("span", { class: "despues" }, String(c.despues)) : null)));
 }
 
 // --- publicar: valida el servidor ---------------------------------------
@@ -385,7 +370,7 @@ function renderEditor() {
     el("h3", { style: "margin-top:0" }, k ? `${k} cambio${k > 1 ? "s" : ""}` : "Sin cambios"),
     el("div", { style: "font-size:12px;max-height:55vh;overflow:auto" }, listaCambios()),
     el("div", { class: "acciones", style: "margin-top:12px" },
-      el("button", { class: "primario", onclick: abrirPublicar, disabled: !k }, `Publicar v${DATOS.version + 1}…`),
+      el("button", { class: "primario", onclick: abrirPublicar, disabled: !k && !errorBorrador }, `Publicar v${DATOS.version + 1}…`),
       el("button", { onclick: descartar, disabled: !DATOS.borrador && !k }, "Descartar"))));
 
   raiz.replaceChildren(el("div", {},
@@ -401,5 +386,6 @@ function renderEditor() {
     paso(4, "Oferta", el("p", { class: "suave", style: "margin:0" }, "Se arma solo para los ratings que aprueban o derivan."), frase)), lado);
 }
 render();
+if (DATOS.borrador) refrescarCambios();
 </script>
 {% endblock %}

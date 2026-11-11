@@ -66,15 +66,21 @@ Cada **adapter de fuente** hace dos cosas: `consultar(identificacion) -> crudo` 
 
 Los documentos extraídos por el agente documental entran como una fuente más (`documentos`, gratuita). Así el motor no distingue entre datos que vienen de una API y datos que vienen de un PDF.
 
-## 3. `reglas`
+## 3. `reglas`, `versiones_reglas` y `catalogo`
 
 ```python
-cargar_reglas(segmento: str, version: str | None = None) -> Reglas
+VersionesReglas.reglas(flujo: str, version: int | None = None) -> Reglas   # la vigente o la pedida
+VersionesReglas.publicar(flujo, contenido, autor, motivo, base) -> Reglas
+VersionesReglas.cambios(flujo, contenido) -> list[Cambio]                  # contra la vigente
+catalogo(flujo) -> tuple[VariableCatalogo, ...]
+validar_condicion(flujo, texto) -> Validacion
 ```
 
-Lee `rules/<segmento>.v<N>.yaml` y valida la estructura al cargar: si el YAML está mal, el error aparece en ese momento y no en medio de una evaluación. Las condiciones usan un lenguaje acotado (`cendeu.peor_situacion_12m >= 3 and propios.lista_negra`), interpretado sobre un AST con una lista blanca de operaciones. Nunca se usa `eval`.
+Las reglas son de un **flujo** (segmento + tipo de flujo, `config/flujos.yaml`) y viven en la base, versionadas (ADR 0007). Los YAML de `rules/` son la semilla: `importar` trae al arrancar las versiones que faltan, sin pisar ninguna. `reglas_desde_dict` valida la estructura al cargar: si algo está mal, el error aparece en ese momento y no en medio de una evaluación. Las condiciones usan un lenguaje acotado (`cendeu.peor_situacion_12m >= 3 and propios.lista_negra`), interpretado sobre un AST con una lista blanca de operaciones. Nunca se usa `eval`.
 
-El YAML también referencia los coeficientes del scorecard (`modelos/<segmento>.v<N>.json`), que se generan offline con el script de entrenamiento.
+Las reglas referencian el modelo del scorecard (`modelos/<segmento>.v<N>.json`, generado offline con el script de entrenamiento), que trae también los ratings y sus topes de PD: son del modelo, no de las reglas.
+
+Las condiciones de un flujo solo pueden usar variables de su **catálogo**: las de la solicitud más las que declara cada fuente que el flujo consulta (cada adapter declara `variables`, con un test de contrato contra lo que devuelve).
 
 ## 4. `agentes`
 
@@ -89,11 +95,11 @@ responder(evaluacion: Evaluacion, historial: list[Turno], pregunta: str, cliente
 
 ## 5. `repositorio`
 
-Guarda en SQLite: solicitudes, evaluaciones (con snapshots, traza, versión de reglas y veredicto), informes, chat y resoluciones del analista. También lista la bandeja y borra una solicitud. Tiene un solo adapter (SQLite; los tests usan `:memory:`), así que no lleva seam propio.
+Guarda en SQLite: solicitudes, evaluaciones (con snapshots, traza, versión de reglas y veredicto), informes, chat, resoluciones del analista, y las versiones y el borrador de las reglas de cada flujo. También lista la bandeja y borra una solicitud. Tiene un solo adapter (SQLite; los tests usan `:memory:`), así que no lleva seam propio.
 
 ## 6. `app`
 
-FastAPI más plantillas Jinja y JS sin frameworks. Tiene tres pantallas: Bandeja, Caso y Reglas. Es delgada a propósito: arma la solicitud, llama a `evaluar`, guarda el resultado y lo muestra.
+FastAPI más plantillas Jinja y JS sin frameworks. Tiene cuatro pantallas: Bandeja, Caso, Reglas (el editor de cada flujo) e Historial de reglas. Es delgada a propósito: arma la solicitud, llama a `evaluar`, guarda el resultado y lo muestra.
 
 ## 7. `sintetico` (offline)
 
@@ -167,3 +173,12 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **Carga manual**: es un documento más (`carga manual`, confianza 1) y por eso pisa a lo extraído. Los casos precargados siguen trayendo las variables armadas.
 - **Persistencia**: tabla `documentos` (archivo, ruta, extracción o error), en cascada con la solicitud. Los archivos quedan en `data/documentos/<solicitud>/` y `Servicio.borrar` los elimina. Si el agente falla en el alta, la solicitud se da de alta igual (sin documentos → *sin antecedentes* → deriva) y se puede **volver a extraer** desde el caso; eso no reevalúa.
 - **Informe y chat** se piden con un botón y quedan atados a una evaluación. El agente recibe la evaluación como JSON (traza, variables traducidas de cada fuente, oferta), sin las respuestas crudas. El chat se guarda solo si hubo respuesta. Se generan a pedido, no al evaluar, porque `claude -p` tarda y la evaluación no debe esperar al agente.
+
+## Decisiones tomadas al construir el editor de reglas (ADR 0007)
+
+- **Ratings del modelo**: los topes de PD de cada rating pasaron de `rules/*.yaml` a `modelos/*.json`. Unas reglas que declaren `ratings` se rechazan. La política solo decide qué hace con cada rating (aprueba, deriva o rechaza).
+- **`versiones_reglas`**: tabla inmutable; publicar crea `vN+1` y la deja vigente. Cada evaluación sigue guardando su `flujo.vN`, así que las viejas se reproducen igual. La clave `segmento:` de las versiones importadas antes se sigue leyendo como `flujo:`.
+- **Una sola lista de cambios** (`diff_reglas.diferencias`) sobre reglas ya leídas: compara lo que significan, no el texto. La usan la vista previa del editor (vía `POST /reglas/{flujo}/cambios`), el chequeo de "sin cambios" al publicar y el historial.
+- **Borrador compartido**, uno por flujo, guardado sin validar. Publicar exige que parta de la vigente (bloqueo optimista). Si alguien publicó en el medio, el borrador se puede pasar a la vigente conservando su contenido: la lista de cambios muestra también lo que publicarlo desharía. Volver atrás es cargar una versión vieja en el borrador y publicarla.
+- **Sin autenticación**: el autor de cada publicación es un nombre declarado, con motivo obligatorio. Dos personas editando a la vez se pisan el borrador (el último que guarda gana).
+- **Flujo de entrada**: una solicitud nueva entra por el flujo de originación de su segmento (`flujo_de_originacion`).

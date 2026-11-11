@@ -2,7 +2,7 @@
 # El scorecard es el mismo de la v2; cambian los killers, las derivaciones y la capacidad de pago.
 # Ver los comentarios de pyme.v1.yaml para el formato.
 
-segmento: monotributista
+flujo: monotributista
 version: 3
 
 killers:

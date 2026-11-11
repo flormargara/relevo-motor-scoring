@@ -2,7 +2,7 @@
 
 import pytest
 
-from relevo.catalogo import catalogo, validar_condicion
+from relevo.catalogo import catalogo, flujo_de_originacion, validar_condicion
 
 
 def nombres(flujo: str) -> set[str]:
@@ -49,3 +49,16 @@ def test_una_condicion_invalida_explica_por_que(texto, mensaje):
 def test_cada_variable_tiene_tipo_y_descripcion():
     for variable in catalogo("pyme"):
         assert variable.tipo and variable.descripcion, variable.nombre
+
+
+def test_una_solicitud_nueva_entra_por_el_flujo_de_originacion_de_su_segmento():
+    assert flujo_de_originacion("pyme").id == "pyme"
+    assert flujo_de_originacion("monotributista").nombre == "Monotributista · Originación"
+    with pytest.raises(LookupError, match="cooperativa"):
+        flujo_de_originacion("cooperativa")
+
+
+def test_las_reglas_dicen_de_que_flujo_son():
+    from relevo.reglas import cargar_reglas
+
+    assert cargar_reglas("pyme").flujo == "pyme"

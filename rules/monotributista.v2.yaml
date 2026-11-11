@@ -1,7 +1,7 @@
 # Reglas del segmento Monotributista (persona humana con actividad), versión 2 (scorecard entrenado sobre la cartera sintética).
 # Ver los comentarios de pyme.v1.yaml para el formato.
 
-segmento: monotributista
+flujo: monotributista
 version: 2
 
 killers:

@@ -51,3 +51,17 @@ def test_decision_y_spread_por_rating_y_campos_de_la_politica():
         Cambio("modificada", "Rating A · spread (pp)", "6", "7"),
         Cambio("modificada", "Política · monto mínimo", "1.000.000", "2.000.000"),
     ]
+
+
+def test_tambien_ve_la_capacidad_de_pago_de_monotributista_y_el_scorecard():
+    base = yaml.safe_load((DIRECTORIO_REGLAS / "monotributista.v3.yaml").read_text())
+    cambiado = copy.deepcopy(base)
+    cambiado["politica"]["capacidad_pago"]["ingreso_anual_por_categoria"]["D"] = 22_000_000
+    cambiado["scorecard"]["si_no_disponible"] = "derivar"
+
+    cambios = diferencias(reglas_desde_dict(base, DIRECTORIO_MODELOS), reglas_desde_dict(cambiado, DIRECTORIO_MODELOS))
+
+    assert cambios == [
+        Cambio("modificada", "Scorecard · si falta un dato", "continuar", "derivar"),
+        Cambio("modificada", "Política · ingreso anual de la categoría D", "21.000.000", "22.000.000"),
+    ]

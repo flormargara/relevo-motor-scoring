@@ -352,3 +352,40 @@ def test_fecha_de_nacimiento_invalida_muestra_el_error(cliente):
 
     assert respuesta.status_code == 400
     assert "fecha de nacimiento" in respuesta.text
+
+
+def test_los_cambios_del_borrador_los_calcula_el_servidor(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["politica"]["derivar_ratings"] = ["D"]
+
+    respuesta = app.post("/reglas/pyme/cambios", json={"contenido": contenido})
+
+    assert respuesta.json() == {
+        "cambios": [{"tipo": "modificada", "que": "Rating D · decisión", "antes": "aprueba", "despues": "deriva"}]
+    }
+
+
+def test_los_cambios_de_un_borrador_que_todavia_no_se_puede_leer_explican_por_que(cliente):
+    app, servicio = cliente()
+    contenido = vigente(servicio)
+    contenido["killers"][0]["condicion"] = "propios.lista_negra or"
+
+    respuesta = app.post("/reglas/pyme/cambios", json={"contenido": contenido})
+
+    assert respuesta.status_code == 422
+    assert "incompleta" in respuesta.json()["error"]
+
+
+def test_desde_la_app_se_actualiza_la_base_del_borrador_y_se_vuelve_a_una_version(cliente):
+    app, servicio = cliente()
+    app.put("/reglas/pyme/borrador", json={"contenido": vigente(servicio), "base": 2})
+
+    respuesta = app.post("/reglas/pyme/borrador/actualizar-base", follow_redirects=False)
+    assert respuesta.status_code == 303
+    assert servicio.versiones.borrador("pyme").base == 3
+
+    respuesta = app.post("/reglas/pyme/borrador/desde/1", follow_redirects=False)
+    assert respuesta.status_code == 303
+    assert servicio.versiones.borrador("pyme").base == 3
+    assert "Cargar esta versión en el borrador" in app.get("/reglas/pyme/historial").text

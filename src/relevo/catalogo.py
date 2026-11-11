@@ -57,6 +57,7 @@ class Flujo:
     id: str
     nombre: str
     segmento: str
+    tipo: str  # originacion (a futuro, p. ej., comportamiento)
     fuentes: tuple[str, ...]
 
 
@@ -64,9 +65,17 @@ class Flujo:
 def flujos(archivo: Path = ARCHIVO_FLUJOS) -> dict[str, Flujo]:
     datos = yaml.safe_load(archivo.read_text(encoding="utf-8"))
     return {
-        id: Flujo(id, d["nombre"], d["segmento"], tuple(d["fuentes"]))
+        id: Flujo(id, d["nombre"], d["segmento"], d["tipo"], tuple(d["fuentes"]))
         for id, d in datos.items()
     }
+
+
+def flujo_de_originacion(segmento: str) -> Flujo:
+    """El flujo por el que entra una solicitud nueva de ese segmento."""
+    for flujo in flujos().values():
+        if flujo.segmento == segmento and flujo.tipo == "originacion":
+            return flujo
+    raise LookupError(f"no hay flujo de originación para el segmento {segmento!r} en config/flujos.yaml")
 
 
 @cache

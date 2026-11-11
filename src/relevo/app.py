@@ -9,6 +9,7 @@ guarda y muestra. Correr con:
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlencode
@@ -274,6 +275,30 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
     def descartar_borrador(flujo: str):
         _flujo(flujo)
         servicio.versiones.descartar_borrador(flujo)
+
+    @app.post("/reglas/{flujo}/borrador/actualizar-base")
+    def actualizar_base_del_borrador(flujo: str):
+        _flujo(flujo)
+        servicio.versiones.actualizar_base_del_borrador(flujo)
+        return RedirectResponse(f"/reglas?flujo={flujo}", status_code=303)
+
+    @app.post("/reglas/{flujo}/borrador/desde/{version}")
+    def cargar_version_en_el_borrador(flujo: str, version: int):
+        _flujo(flujo)
+        try:
+            servicio.versiones.cargar_version_en_el_borrador(flujo, version)
+        except ReglasInvalidas:
+            raise HTTPException(404, "no existe esa versión") from None
+        return RedirectResponse(f"/reglas?flujo={flujo}", status_code=303)
+
+    @app.post("/reglas/{flujo}/cambios")
+    def cambios_del_borrador(flujo: str, cuerpo: Annotated[dict[str, Any], Body()]):
+        _flujo(flujo)
+        try:
+            cambios = servicio.versiones.cambios(flujo, _contenido(cuerpo))
+        except ReglasInvalidas as error:
+            return JSONResponse({"error": str(error)}, status_code=422)
+        return {"cambios": [asdict(c) for c in cambios]}
 
     @app.post("/reglas/{flujo}/publicar")
     def publicar_reglas(flujo: str, cuerpo: Annotated[dict[str, Any], Body()]):

@@ -4,7 +4,7 @@
 # comparaciones, and/or/not, + - * / y listas de constantes.
 # `si_no_disponible`: continuar (default) | derivar | rechazar. Ver ADR 0006.
 
-segmento: pyme
+flujo: pyme
 version: 3
 
 # El orden es parte de la política (ADR 0005): de lo más barato y frecuente a lo más caro.

@@ -34,6 +34,11 @@ def diferencias(antes: Reglas, despues: Reglas) -> list[Cambio]:
 
     if antes.scorecard.modelo != despues.scorecard.modelo:
         cambios.append(Cambio("modificada", "Scorecard · modelo", antes.scorecard.modelo, despues.scorecard.modelo))
+    if antes.scorecard.si_no_disponible != despues.scorecard.si_no_disponible:
+        cambios.append(
+            Cambio("modificada", "Scorecard · si falta un dato", antes.scorecard.si_no_disponible,
+                   despues.scorecard.si_no_disponible)
+        )
     for rating in dict.fromkeys(r.nombre for r in (*antes.ratings, *despues.ratings)):
         d0, d1 = _decision(antes, rating), _decision(despues, rating)
         if d0 != d1:
@@ -45,6 +50,7 @@ def diferencias(antes: Reglas, despues: Reglas) -> list[Cambio]:
 
     for etiqueta, valor in (
         ("tasa base", lambda r: r.politica.tasa_base.texto),
+        ("forma de medir la capacidad de pago", lambda r: r.politica.capacidad_pago.tipo),
         ("variable de capacidad de pago", lambda r: r.politica.capacidad_pago.variable.texto),
         ("cuota máxima", lambda r: r.politica.capacidad_pago.porcentaje_cuota),
         ("monto mínimo", lambda r: r.politica.monto_minimo),
@@ -56,6 +62,13 @@ def diferencias(antes: Reglas, despues: Reglas) -> list[Cambio]:
         v0, v1 = valor(antes), valor(despues)
         if v0 != v1:
             cambios.append(Cambio("modificada", f"Política · {etiqueta}", _texto(v0), _texto(v1)))
+    ingresos_antes = antes.politica.capacidad_pago.ingreso_anual_por_categoria or {}
+    ingresos_despues = despues.politica.capacidad_pago.ingreso_anual_por_categoria or {}
+    for categoria in dict.fromkeys((*ingresos_antes, *ingresos_despues)):
+        i0, i1 = ingresos_antes.get(categoria), ingresos_despues.get(categoria)
+        if i0 != i1:
+            que = f"Política · ingreso anual de la categoría {categoria}"
+            cambios.append(Cambio("modificada", que, _texto(i0), _texto(i1)))
     return cambios
 
 

@@ -1,8 +1,9 @@
-"""Reglas versionadas por segmento (ADR 0002).
+"""Reglas de un flujo (ADR 0002 y 0007).
 
-``cargar_reglas`` lee ``rules/<segmento>.v<N>.yaml`` y el modelo del scorecard
-que referencia (``modelos/<archivo>.json``), y valida todo al cargar: un YAML
-mal formado falla acá y nunca en medio de una evaluación.
+``reglas_desde_dict`` construye y valida unas reglas con el modelo del scorecard que
+referencian (``modelos/<archivo>.json``): unas reglas mal formadas fallan al cargarlas
+y nunca en medio de una evaluación. Las versiones viven en la base (``versiones_reglas``);
+``cargar_reglas`` lee los YAML de ``rules/``, que son la semilla.
 """
 
 from __future__ import annotations
@@ -115,7 +116,7 @@ class Politica:
 
 @dataclass(frozen=True)
 class Reglas:
-    segmento: str
+    flujo: str
     version: int
     killers: tuple[Regla, ...]
     derivaciones: tuple[Regla, ...]
@@ -125,7 +126,7 @@ class Reglas:
 
     @property
     def id(self) -> str:
-        return f"{self.segmento}.v{self.version}"
+        return f"{self.flujo}.v{self.version}"
 
     @property
     def _expresiones(self) -> list[Expresion]:
@@ -186,8 +187,8 @@ def cargar_reglas(
     except yaml.YAMLError as error:
         raise ReglasInvalidas(f"{archivo.name}: YAML inválido: {error}") from None
     reglas = reglas_desde_dict(datos, directorio_modelos)
-    if reglas.segmento != segmento or reglas.version != elegida:
-        raise ReglasInvalidas(f"{archivo.name} declara la versión {reglas.version} del segmento {reglas.segmento!r}")
+    if reglas.flujo != segmento or reglas.version != elegida:
+        raise ReglasInvalidas(f"{archivo.name} declara la versión {reglas.version} del flujo {reglas.flujo!r}")
     return reglas
 
 
@@ -199,7 +200,8 @@ def reglas_desde_dict(datos: Any, directorio_modelos: Path = DIRECTORIO_MODELOS)
     scorecard, ratings = _scorecard(d.dict("scorecard"), directorio_modelos)
     nombres = tuple(r.nombre for r in ratings)
     return Reglas(
-        segmento=d.texto("segmento"),
+        # `segmento:` es el nombre viejo de la clave, en las versiones importadas antes del ADR 0007
+        flujo=d.texto("flujo" if "flujo" in d.datos else "segmento"),
         version=d.entero("version"),
         killers=_reglas(d.lista("killers"), "killers"),
         derivaciones=_reglas(d.lista("derivaciones", []), "derivaciones"),

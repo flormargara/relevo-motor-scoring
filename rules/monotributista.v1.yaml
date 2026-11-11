@@ -1,7 +1,7 @@
 # Reglas del segmento Monotributista (persona humana con actividad), versión 1.
 # Ver los comentarios de pyme.v1.yaml para el formato.
 
-segmento: monotributista
+flujo: monotributista
 version: 1
 
 killers:
