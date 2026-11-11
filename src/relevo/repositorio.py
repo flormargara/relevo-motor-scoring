@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS versiones_reglas (
     PRIMARY KEY (flujo, version)
 );
 
+-- El borrador en edición de cada flujo: uno solo y compartido (ADR 0007).
+CREATE TABLE IF NOT EXISTS borradores_reglas (
+    flujo TEXT PRIMARY KEY,
+    contenido TEXT NOT NULL,     -- JSON de las reglas, todavía sin validar
+    base INTEGER NOT NULL,       -- versión vigente de la que parte
+    actualizado_en TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS resoluciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     evaluacion_id INTEGER NOT NULL REFERENCES evaluaciones(id) ON DELETE CASCADE,
@@ -182,6 +190,14 @@ class VersionReglasGuardada:
     motivo: str
     base: int | None
     publicada_en: datetime
+
+
+@dataclass(frozen=True)
+class BorradorReglas:
+    flujo: str
+    contenido: dict[str, Any]
+    base: int
+    actualizado_en: datetime
 
 
 class SolicitudInexistente(LookupError):
@@ -456,6 +472,32 @@ class Repositorio:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (flujo, version, contenido, autor, motivo, base, (ahora or datetime.now()).isoformat()),
         )
+
+    def guardar_borrador_reglas(
+        self, flujo: str, contenido: dict[str, Any], base: int, ahora: datetime | None = None
+    ) -> None:
+        self._ejecutar(
+            "INSERT INTO borradores_reglas (flujo, contenido, base, actualizado_en) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (flujo) DO UPDATE SET contenido = excluded.contenido, base = excluded.base, "
+            "actualizado_en = excluded.actualizado_en",
+            (flujo, _json(contenido), base, (ahora or datetime.now()).isoformat()),
+        )
+
+    def borrador_reglas(self, flujo: str) -> BorradorReglas | None:
+        fila = self._ejecutar("SELECT * FROM borradores_reglas WHERE flujo = ?", (flujo,)).fetchone()
+        if fila is None:
+            return None
+        return BorradorReglas(
+            fila["flujo"], json.loads(fila["contenido"]), fila["base"], datetime.fromisoformat(fila["actualizado_en"])
+        )
+
+    def borrar_borrador_reglas(self, flujo: str) -> None:
+        self._ejecutar("DELETE FROM borradores_reglas WHERE flujo = ?", (flujo,))
+
+    def versiones_reglas(self, flujo: str) -> list[VersionReglasGuardada]:
+        """Todas las versiones del flujo, de la más nueva a la más vieja."""
+        filas = self._ejecutar("SELECT version FROM versiones_reglas WHERE flujo = ? ORDER BY version DESC", (flujo,))
+        return [self.version_reglas(flujo, fila["version"]) for fila in filas.fetchall()]
 
     def version_reglas(self, flujo: str, version: int | None = None) -> VersionReglasGuardada | None:
         """La versión pedida o, si no se pide, la vigente (la de mayor número)."""

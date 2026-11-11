@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set seccion = "reglas" %}
+{% block titulo %}Historial · {{ flujo.nombre }}{% endblock %}
+{% block contenido %}
+<div class="acciones" style="margin-bottom: 12px; align-items: center;">
+  {% for f in flujos %}
+  <a class="boton {{ 'chip' if f.id == flujo.id }}" href="/reglas/{{ f.id }}/historial">{{ f.nombre }}</a>
+  {% endfor %}
+  <a href="/reglas?flujo={{ flujo.id }}" style="margin-left: auto;">Volver al editor</a>
+</div>
+<h1>Historial de {{ flujo.nombre }}</h1>
+<p class="sub">Cada versión publicada queda fija. La de arriba es la vigente: la usan las evaluaciones nuevas; cada evaluación guarda la versión que usó.</p>
+
+{% for guardada, cambios in filas %}
+<section class="tarjeta">
+  <h2>v{{ guardada.version }}{% if loop.first %} <span class="chip APROBADO">vigente</span>{% endif %}</h2>
+  <dl class="kv">
+    <dt>Publicada</dt><dd>{{ guardada.publicada_en | fecha }}</dd>
+    <dt>Autor</dt><dd>{{ guardada.autor }}</dd>
+    <dt>Motivo</dt><dd>{{ guardada.motivo }}</dd>
+    {% if guardada.base %}<dt>Partió de</dt><dd>v{{ guardada.base }}</dd>{% endif %}
+  </dl>
+  {% if cambios is none %}
+  <p class="suave" style="margin-bottom: 0;">Versión inicial.</p>
+  {% elif not cambios %}
+  <p class="suave" style="margin-bottom: 0;">Sin cambios respecto de v{{ guardada.version - 1 }}.</p>
+  {% else %}
+  <h3>Cambios respecto de v{{ guardada.version - 1 }}</h3>
+  <table>
+    <tbody>{% for c in cambios %}
+      <tr>
+        <td style="white-space: nowrap;"><span class="chip {{ {'agregada': 'APROBADO', 'quitada': 'RECHAZADO'}.get(c.tipo, 'DERIVAR') }}">{{ c.tipo }}</span></td>
+        <td><strong>{{ c.que }}</strong></td>
+        <td>{% if c.antes is not none %}<code>{{ c.antes }}</code>{% endif %}{% if c.antes is not none and c.despues is not none %} → {% endif %}{% if c.despues is not none %}<code>{{ c.despues }}</code>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  {% endif %}
+  <details style="margin-top: 10px;"><summary>YAML</summary><pre>{{ guardada.contenido }}</pre></details>
+</section>
+{% endfor %}
+{% endblock %}

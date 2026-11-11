@@ -13,15 +13,20 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+import yaml
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from relevo import presentacion
+from relevo.catalogo import Flujo, catalogo, flujos, validar_condicion
 from relevo.clientes_claude import AgenteNoDisponible, cliente_desde_entorno
+from relevo.diff_reglas import diferencias
 from relevo.presentacion import a_json, cuit_con_guiones, fecha, numero, pesos, porcentaje, tipo_resultado
+from relevo.reglas import ReglasInvalidas
 from relevo.repositorio import EvaluacionGuardada, Repositorio, SolicitudInexistente
 from relevo.servicio import EXTENSIONES_DOCUMENTO, RAIZ, SEGMENTOS, Servicio, SolicitudInvalida
+from relevo.versiones_reglas import ConflictoDeVersion
 
 PLANTILLAS = Jinja2Templates(directory=Path(__file__).parent / "plantillas")
 
@@ -204,22 +209,95 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
             raise HTTPException(400, str(error)) from None
         return RedirectResponse(f"/solicitudes/{id}", status_code=303)
 
+    # --- reglas: editor por flujo (ADR 0007) -----------------------------
+
+    def _flujo(flujo: str) -> Flujo:
+        if flujo not in flujos():
+            raise HTTPException(404, "flujo desconocido")
+        return flujos()[flujo]
+
     @app.get("/reglas", response_class=HTMLResponse)
-    def ver_reglas(request: Request, segmento: str = "pyme"):
-        if segmento not in SEGMENTOS:
-            raise HTTPException(404, "segmento desconocido")
-        reglas, texto, metricas = servicio.texto_reglas(segmento)
+    def ver_reglas(request: Request, flujo: str = "pyme"):
+        definicion = _flujo(flujo)
+        reglas, texto, metricas = servicio.texto_reglas(flujo)
+        ratings = [{"rating": r.nombre, "pd_hasta": r.pd_hasta} for r in reglas.ratings]
+        borrador = servicio.versiones.borrador(flujo)
+        datos = {
+            "flujo": flujo,
+            "nombre": definicion.nombre,
+            "version": reglas.version,
+            "vigente": yaml.safe_load(texto) | {"ratings": ratings},
+            "borrador": (borrador.contenido | {"ratings": ratings}) if borrador else None,
+            "base_borrador": borrador.base if borrador else None,
+            "metricas": metricas,
+            "catalogo": [
+                {"nombre": v.nombre, "tipo": v.tipo, "descripcion": v.descripcion, "fuente": v.fuente}
+                for v in catalogo(flujo)
+            ],
+        }
         return pagina(
             request,
             "reglas.html",
-            segmentos=SEGMENTOS,
-            segmento=segmento,
+            flujos=flujos().values(),
+            flujo=definicion,
             reglas=reglas,
-            texto=texto,
             metricas=metricas,
+            borrador=borrador,
+            datos=datos,
         )
 
+    @app.get("/reglas/{flujo}/historial", response_class=HTMLResponse)
+    def historial_reglas(request: Request, flujo: str):
+        definicion = _flujo(flujo)
+        versiones = repo.versiones_reglas(flujo)
+        filas = []
+        for guardada in versiones:
+            anterior = guardada.version - 1
+            cambios = None
+            if any(v.version == anterior for v in versiones):
+                cambios = diferencias(servicio.reglas(flujo, anterior), servicio.reglas(flujo, guardada.version))
+            filas.append((guardada, cambios))
+        return pagina(request, "historial_reglas.html", flujos=flujos().values(), flujo=definicion, filas=filas)
+
+    @app.post("/reglas/validar")
+    def validar_regla(cuerpo: Annotated[dict[str, Any], Body()]):
+        flujo = _flujo(str(cuerpo.get("flujo", ""))).id
+        validacion = validar_condicion(flujo, str(cuerpo.get("condicion", "")))
+        return {"ok": validacion.ok, "error": validacion.error, "usa": list(validacion.usa)}
+
+    @app.put("/reglas/{flujo}/borrador", status_code=204)
+    def guardar_borrador(flujo: str, cuerpo: Annotated[dict[str, Any], Body()]):
+        _flujo(flujo)
+        servicio.versiones.guardar_borrador(flujo, _contenido(cuerpo), int(cuerpo["base"]))
+
+    @app.delete("/reglas/{flujo}/borrador", status_code=204)
+    def descartar_borrador(flujo: str):
+        _flujo(flujo)
+        servicio.versiones.descartar_borrador(flujo)
+
+    @app.post("/reglas/{flujo}/publicar")
+    def publicar_reglas(flujo: str, cuerpo: Annotated[dict[str, Any], Body()]):
+        _flujo(flujo)
+        try:
+            reglas = servicio.versiones.publicar(
+                flujo, _contenido(cuerpo), str(cuerpo.get("autor", "")), str(cuerpo.get("motivo", "")),
+                base=int(cuerpo["base"]),
+            )
+        except ConflictoDeVersion as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+        except ReglasInvalidas as error:
+            return JSONResponse({"error": str(error)}, status_code=422)
+        return {"version": reglas.id}
+
     return app
+
+
+def _contenido(cuerpo: dict[str, Any]) -> dict[str, Any]:
+    """Las reglas que manda el editor, sin lo que es solo de la pantalla (los ratings son del modelo)."""
+    contenido = cuerpo.get("contenido")
+    if not isinstance(contenido, dict):
+        raise HTTPException(422, "falta el contenido de las reglas")
+    return {k: v for k, v in contenido.items() if k != "ratings"}
 
 
 def _reglas_de(servicio: Servicio, evaluacion) -> Any:
