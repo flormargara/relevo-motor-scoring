@@ -54,6 +54,7 @@ def igj(ruta):
 def test_igj_sociedad_activa_con_antiguedad_desde_el_primer_registro(snapshot_igj):
     variables = igj(snapshot_igj)("30546689979").variables
 
+    assert set(variables) == set(Igj.variables)  # contrato con el catálogo (ADR 0007)
     # dos legajos con el mismo CUIT: vale el activo, y la fecha más vieja de los dos
     assert variables["razon_social"] == "YPF"
     assert variables["dada_de_baja"] is False
@@ -107,6 +108,7 @@ def test_bureau_usa_el_caso_configurado_o_un_valor_determinista():
     datos = {"bureau": {"casos": {"30546689979": {"score": 880}}}}
 
     assert consultar(Bureau(datos), "30546689979") == Disponible({"score": 880})
+    assert set(Bureau.variables) == {"score"}  # contrato con el catálogo (ADR 0007)
     otro = consultar(Bureau(datos), "30999999995").variables["score"]
     assert 300 <= otro <= 950
     assert consultar(Bureau(datos), "30999999995").variables["score"] == otro
@@ -121,6 +123,7 @@ def test_lista_negra():
     propios = Propios({"propios": {"lista_negra": ["30999999995"]}})
 
     assert consultar(propios, "30999999995").variables["lista_negra"] is True
+    assert set(consultar(propios, "30999999995").variables) == set(Propios.variables)  # contrato (ADR 0007)
     assert consultar(propios, "30546689979").variables["lista_negra"] is False
 
 
@@ -128,6 +131,7 @@ def test_identidad_calcula_la_edad_a_la_fecha_de_consulta():
     datos = {"identidad": {"casos": {"27301234568": {"fecha_nacimiento": "1986-11-11"}}}}
 
     assert consultar(Identidad(datos, hoy=lambda: HOY), "27301234568").variables["edad"] == 39
+    assert set(consultar(Identidad(datos, hoy=lambda: HOY), "27301234568").variables) == set(Identidad.variables)
     assert consultar(Identidad(datos, hoy=lambda: date(2026, 11, 11)), "27301234568").variables["edad"] == 40
     assert 25 <= consultar(Identidad(datos, hoy=lambda: HOY), "20111111112").variables["edad"] <= 71
 
@@ -151,6 +155,7 @@ def test_identidad_declarada_expone_edad_origen_y_no_validada():
 
     variables = consultar(adapter, "27301234568").variables
     assert variables == {"edad": 39, "validada": False, "origen": "declarada"}
+    assert set(variables) == set(IdentidadDeclarada.variables)  # contrato con el catálogo (ADR 0007)
 
 
 def test_identidad_declarada_sin_fecha_es_sin_antecedentes():

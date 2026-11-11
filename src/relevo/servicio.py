@@ -22,14 +22,16 @@ import httpx
 import yaml
 
 from relevo import agentes, identificacion
+from relevo.catalogo import flujo_de_originacion
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
 from relevo.fuentes import AdapterFuente
 from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.motor import evaluar
-from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas, cargar_reglas
+from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas
 from relevo.repositorio import AlmacenSqlite, Repositorio, SolicitudGuardada
+from relevo.versiones_reglas import VersionesReglas
 
 RAIZ = Path(__file__).resolve().parents[2]
 CASOS_PRECARGADOS = (RAIZ / "config" / "casos_precargados.yaml", RAIZ / "data" / "casos_precargados.local.yaml")
@@ -68,6 +70,9 @@ class Servicio:
         self.ahora = ahora
         self.dormir = dormir
         self.directorio_reglas = directorio_reglas
+        # Las reglas viven en la base; los YAML son la semilla y solo se traen las versiones nuevas (ADR 0007).
+        self.versiones = VersionesReglas(repositorio)
+        self.versiones.importar(directorio_reglas)
         self.cliente_claude = cliente_claude or SinAgente()
         self.directorio_documentos = directorio_documentos
         self._cliente: httpx.Client | None = None
@@ -200,7 +205,7 @@ class Servicio:
 
     def evaluar(self, solicitud_id: str) -> int:
         guardada = self.repositorio.solicitud(solicitud_id)
-        reglas = self.reglas(guardada.solicitud.segmento)
+        reglas = self.reglas(flujo_de_originacion(guardada.solicitud.segmento).id)
         consultor = ConsultorReal(
             identificacion=guardada.solicitud.cuit,
             adapters=self.adapters(guardada),
@@ -242,13 +247,13 @@ class Servicio:
 
     # --- reglas -----------------------------------------------------------
 
-    def reglas(self, segmento: str, version: int | None = None) -> Reglas:
-        return cargar_reglas(segmento, version, directorio_reglas=self.directorio_reglas)
+    def reglas(self, flujo: str, version: int | None = None) -> Reglas:
+        return self.versiones.reglas(flujo, version)
 
-    def texto_reglas(self, segmento: str) -> tuple[Reglas, str, dict[str, Any] | None]:
+    def texto_reglas(self, flujo: str) -> tuple[Reglas, str, dict[str, Any] | None]:
         """Reglas vigentes, su YAML tal cual y las métricas del modelo del scorecard."""
-        reglas = self.reglas(segmento)
-        texto = (self.directorio_reglas / f"{segmento}.v{reglas.version}.yaml").read_text(encoding="utf-8")
+        reglas = self.reglas(flujo)
+        texto = self.repositorio.version_reglas(flujo, reglas.version).contenido
         modelo = json.loads((DIRECTORIO_MODELOS / reglas.scorecard.modelo).read_text(encoding="utf-8"))
         return reglas, texto, modelo.get("metricas")
 

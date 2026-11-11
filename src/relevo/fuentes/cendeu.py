@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 
 from relevo.consultor import Disponible, NoDisponible, ResultadoFuente, SinAntecedentes
-from relevo.fuentes import get_json
+from relevo.fuentes import Variable, get_json
 
 URL_BASE = "https://api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas"
 MESES = 12
@@ -24,6 +24,19 @@ MESES = 12
 
 class Cendeu:
     nombre = "cendeu"
+    variables = {
+        "identificacion_rechazada": Variable("booleano", "El BCRA rechazó la identificación (HTTP 400)"),
+        "denominacion": Variable("texto", "Nombre informado por la Central de Deudores"),
+        "periodo": Variable("texto", "Último período informado (AAAAMM)"),
+        "peor_situacion_actual": Variable("entero", "Peor situación (1 a 6) con deuda en el último período"),
+        "peor_situacion_12m": Variable("entero", "Peor situación (1 a 6) en los últimos 12 meses"),
+        "deuda_irregular_12m": Variable("pesos", "Mayor deuda en situación 3 o peor en los últimos 12 meses"),
+        "proporcion_irregular_12m": Variable("proporción", "Mayor proporción de deuda irregular en 12 meses"),
+        "entidades_con_deuda": Variable("entero", "Entidades con deuda en el último período"),
+        "deuda_total": Variable("pesos", "Deuda total en el último período"),
+        "en_proceso_judicial": Variable("booleano", "Alguna deuda del último período está en proceso judicial"),
+        "meses_informados": Variable("entero", "Meses con información en el historial"),
+    }
 
     def __init__(self, cliente: httpx.Client, url_base: str = URL_BASE):
         self.cliente = cliente
@@ -79,6 +92,11 @@ class Cendeu:
 
 class Cheques:
     nombre = "cheques"
+    variables = {
+        "rechazados_total": Variable("entero", "Cheques rechazados informados"),
+        "rechazados_impagos": Variable("entero", "Cheques rechazados sin pagar"),
+        "monto_impago": Variable("pesos", "Monto de los cheques rechazados sin pagar"),
+    }
 
     def __init__(self, cliente: httpx.Client, url_base: str = URL_BASE):
         self.cliente = cliente

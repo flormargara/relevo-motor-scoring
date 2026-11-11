@@ -19,6 +19,7 @@ from datetime import date
 from typing import Any
 
 from relevo.consultor import Disponible, ResultadoFuente, SinAntecedentes
+from relevo.fuentes import Variable
 
 ORIGEN_DECLARADA = "declarada"
 
@@ -27,8 +28,16 @@ def calcular_edad(nacimiento: date, hoy: date) -> int:
     return hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
 
 
+VARIABLES_IDENTIDAD = {
+    "edad": Variable("entero", "Edad en años"),
+    "validada": Variable("booleano", "La fecha de nacimiento está validada (no declarada)"),
+    "origen": Variable("texto", "De dónde sale la fecha: declarada, simulada o renaper"),
+}
+
+
 class IdentidadDeclarada:
     nombre = "identidad"
+    variables = VARIABLES_IDENTIDAD
 
     def __init__(self, fecha_nacimiento: date | None, hoy: Callable[[], date] = date.today):
         self.fecha_nacimiento = fecha_nacimiento

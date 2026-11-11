@@ -47,6 +47,7 @@ def arca(ruta):
 def test_arca_empresa_inscripta(snapshot_arca):
     variables = arca(snapshot_arca)("30500010912").variables
 
+    assert set(variables) == set(Arca.variables)  # contrato con el catálogo (ADR 0007)
     assert variables == {
         "denominacion": "BANCO DE LA NACION ARGENTINA",
         "ganancias": "activo",
