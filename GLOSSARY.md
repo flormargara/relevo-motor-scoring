@@ -17,7 +17,11 @@ La persona de la entidad que revisa los casos, sobre todo los derivados.
 _Avoid_: operador, usuario
 
 **Segmento**:
-El tipo de solicitante: `PyME` (persona jurídica) o `Monotributista` (persona humana con actividad). Cada segmento tiene sus propias reglas y su propio scorecard.
+El tipo de solicitante: `PyME` (persona jurídica) o `Monotributista` (persona humana con actividad). Es un dato de la solicitud; las reglas no son del segmento sino del flujo.
+
+**Flujo**:
+Una variante del motor aplicada a un segmento: la unidad que tiene sus propias reglas, su catálogo de variables y su historial de versiones. Se identifica por segmento más tipo de flujo (hoy solo originación: "PyME · Originación"; a futuro, p. ej., comportamiento). El punto de entrada decide qué flujo corre: una solicitud nueva entra por originación; una cuenta ya otorgada, por comportamiento.
+_Avoid_: pipeline (es el recorrido interno de un flujo), segmento (es solo el tipo de solicitante)
 
 ## Pipeline de decisión
 
@@ -54,11 +58,14 @@ La probabilidad estimada de que el solicitante entre en mora grave dentro del ho
 _Avoid_: score (el score es la escala de puntos, no la probabilidad)
 
 **Scorecard**:
-El modelo que convierte las características del solicitante en puntos y, a partir de ellos, en una PD. Hay uno por segmento.
+El modelo que convierte las características del solicitante en puntos y, a partir de ellos, en una PD. Cada versión de reglas de un flujo referencia uno.
 
 **Rating**:
-La categoría de riesgo (A a E) en la que cae una PD.
+La categoría de riesgo (A a E) en la que cae una PD. Los ratings y sus topes de PD son parte del modelo, no de la política: la política solo decide si cada rating aprueba, deriva o rechaza.
 _Avoid_: banda, tier, grado
+
+**Pérdida esperada teórica**:
+La pérdida que el modelo tiene que garantizar para cada rating. Por eso los topes de PD de los ratings no se editan: solo se informan.
 
 **Política**:
 El conjunto de reglas que, dado el rating y la capacidad de pago, construye la oferta o rechaza la solicitud.
@@ -91,7 +98,22 @@ El registro paso a paso de cómo el motor llegó al veredicto: fuentes consultad
 _Avoid_: log, auditoría
 
 **Versión de reglas**:
-Una versión identificada del conjunto de killers, ratings y política de un segmento.
+Una versión identificada e inmutable del conjunto de killers, derivaciones, ratings y política de un flujo.
+
+## Edición de reglas
+
+**Catálogo de variables**:
+Las variables (`fuente.variable`) que un flujo puede usar en sus condiciones, con su tipo y descripción. Es propio de cada flujo: solo incluye las fuentes que ese flujo consulta.
+
+**Borrador**:
+La versión de reglas en edición de un flujo, todavía sin efecto sobre las evaluaciones. Hay uno por flujo y parte de la versión vigente.
+
+**Versión vigente**:
+La versión de reglas que usan las evaluaciones nuevas de un flujo: la última publicada.
+
+**Publicar**:
+Validar un borrador y convertirlo en una nueva versión de reglas, que pasa a ser la vigente. Volver atrás es publicar de nuevo el contenido de una versión anterior; nunca se modifica una versión publicada.
+_Avoid_: guardar, desplegar, activar
 
 ## Agentes
 
