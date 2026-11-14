@@ -9,7 +9,7 @@ Relevo se puede comprar entero o por partes. Los módulos vendibles son cuatro:
 1. **Motor y backoffice de reglas**: evalúa una solicitud y devuelve veredicto, oferta y traza; el backoffice edita, publica y compara versiones de reglas (ADR 0007).
 2. **Modelos de ML**: calculan score/PD a partir de variables. Tres variantes según el origen de los datos: externos (bureau, CENDEU, ARCA), propios del cliente, o mixtos.
 3. **Lectura de documentos**: convierte documentos subidos (balances, constancias) en campos con confianza.
-4. **Chat con tus datos**: uno o más agentes que responden preguntas sobre cualquier etapa del ciclo (evaluación, oferta, conversión, desembolso), elaboran informes, simulan cambios de política, estiman resultados sobre una base de clientes y emiten alertas. Incluye el **monitoreo** (parte de lo que ya registran los flujos; mantiene reportes actualizados y envía informes) y el **simulador de políticas** (backtesting sobre la historia).
+4. **Chat con tus datos**: uno o más agentes que responden preguntas sobre cualquier etapa del ciclo (evaluación, oferta, conversión, desembolso), elaboran informes, simulan cambios de política, estiman resultados sobre una base de clientes y emiten alertas. Incluye el **monitoreo** (parte de lo que registran los flujos y de los datos de cartera del cliente; mantiene reportes actualizados y envía informes) y el **simulador de políticas** (backtesting sobre la historia).
 
 Cada módulo se entrega **de las dos formas**: como servicio con API, para que el cliente lo integre en su sistema, y como aplicación con pantalla propia. La pantalla es un cliente de la API del módulo, nunca un camino aparte a los datos: así lo que se ve en pantalla y lo que se integra por API es lo mismo.
 
@@ -48,7 +48,7 @@ Cada módulo expone una interface chica y estable; lo que hay detrás puede camb
 
 - El agente de IA nunca decide (ADR 0001) y eso vale también para el chat: puede explicar y simular, pero no publica reglas ni cambia un veredicto. **Por ahora el chat es de solo lectura**; ejecutar cambios (por ejemplo publicar una política simulada) queda fuera hasta que haya login, roles y aprobación explícita.
 - Una simulación del chat corre el motor sobre datos guardados y no escribe evaluaciones: es una lectura, no una evaluación nueva.
-- El chat necesita datos que hoy no se guardan: el repositorio llega hasta la evaluación. Conversión, desembolso y comportamiento posterior hay que modelarlos y definir de dónde entran (carga, API del cliente o importación). Es el trabajo más grande de este ADR.
+- **Los datos posteriores a la evaluación (conversión, desembolso, pagos, mora) son responsabilidad del cliente y no forman parte del producto.** Relevo registra lo que decide (solicitud, evaluación, oferta, traza); lo que pasa después vive en los sistemas del cliente. El chat **los puede leer**, pero Relevo no los almacena, modela ni valida. Hace falta un **seam de lectura** (por ejemplo `FuenteDeCartera`) con adapters por tipo de origen del cliente (base SQL, API, archivos), de solo lectura, y que el cliente declare cómo se enlaza cada registro con la evaluación (el id de solicitud).
 - Hoy hay un solo proceso, `app.py` expone páginas y endpoints juntos. Para entregar por API hay que separar, por módulo, la API de las páginas, sin necesidad de separar procesos todavía.
 - Sin autenticación (ADR 0007): vender como servicio a terceros exige login y claves de API por cliente antes del primer despliegue externo.
 - Los datos de cada cliente deben quedar aislados. Hoy hay una sola base; la multi-tenencia no está resuelta.
@@ -66,13 +66,13 @@ Ambos se versionan igual y las reglas referencian la versión exacta, como hoy c
 
 - **Cobranzas queda afuera** de este producto: sería un producto aparte, con sus propios módulos y datos.
 - **Comportamiento y límites** no es un módulo: es un **flujo más del motor** (aumento o renovación de límite), como los de originación de monotributistas y de PyMEs. Tiene reglas, catálogo de variables y versiones propios (ADR 0007: el dueño de las reglas es el flujo). Lo nuevo es que parte de un cliente existente, así que necesita datos propios de su comportamiento (pagos, mora, uso de la línea) además de las fuentes externas.
-- **Monitoreo y gobierno** es parte del chat: lee lo que los flujos ya registran (evaluaciones, ofertas, conversiones, desembolsos) y puede mantener reportes al día, enviar informes y emitir alertas. No necesita un módulo ni un almacenamiento aparte, solo que los flujos registren bien.
+- **Monitoreo y gobierno** es parte del chat: lee lo que los flujos ya registran (evaluaciones, ofertas, conversiones, desembolsos) y puede mantener reportes al día, enviar informes y emitir alertas. No necesita un módulo ni un almacenamiento aparte.
 - **Simulador de políticas** también es parte del chat: ejecuta el motor sobre datos guardados con reglas candidatas y compara. Es lectura, no escribe evaluaciones ni publica reglas.
 
 ### Consecuencias de esta decisión
 
 - Enviar informes y mantener reportes actualizados es una **acción de salida** (un mail, un archivo generado), aunque no cambie datos ni reglas. "Solo lee" se entiende como: nunca modifica evaluaciones, reglas ni modelos. Enviar informes exige definir destinatarios y permisos, y queda para cuando haya login y roles.
-- Un flujo de comportamiento obliga a que el repositorio guarde datos posteriores a la originación. Es el mismo trabajo que ya pide el chat, así que ambos se benefician de resolverlo una vez.
+- Un flujo de comportamiento necesita datos de comportamiento del cliente (pagos, mora, uso de la línea). Entran como variables propias del cliente a través del mismo seam de lectura que usa el chat, no como tablas de Relevo. Si el cliente no los entrega, el flujo no puede correr: ese requisito es del cliente.
 
 ## Preguntas abiertas
 
