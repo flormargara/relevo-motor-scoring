@@ -66,7 +66,7 @@ Ambos se versionan igual y las reglas referencian la versión exacta, como hoy c
 
 - **Cobranzas queda afuera** de este producto: sería un producto aparte, con sus propios módulos y datos.
 - **Comportamiento y límites** no es un módulo: es un **flujo más del motor** (aumento o renovación de límite), como los de originación de monotributistas y de PyMEs. Tiene reglas, catálogo de variables y versiones propios (ADR 0007: el dueño de las reglas es el flujo). Lo nuevo es que parte de un cliente existente, así que necesita datos propios de su comportamiento (pagos, mora, uso de la línea) además de las fuentes externas.
-- **Monitoreo y gobierno** es parte del chat: lee lo que los flujos ya registran (evaluaciones, ofertas, conversiones, desembolsos) y puede mantener reportes al día, enviar informes y emitir alertas. No necesita un módulo ni un almacenamiento aparte.
+- **Monitoreo y gobierno** es parte del chat: lee lo que registran los flujos (evaluaciones, ofertas) y lo que el cliente expone de su cartera (conversiones, desembolsos, pagos) y puede mantener reportes al día, enviar informes y emitir alertas. No necesita un módulo ni un almacenamiento aparte.
 - **Simulador de políticas** también es parte del chat: ejecuta el motor sobre datos guardados con reglas candidatas y compara. Es lectura, no escribe evaluaciones ni publica reglas.
 
 ### Consecuencias de esta decisión
