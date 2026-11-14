@@ -74,6 +74,15 @@ Ambos se versionan igual y las reglas referencian la versión exacta, como hoy c
 - Enviar informes y mantener reportes actualizados es una **acción de salida** (un mail, un archivo generado), aunque no cambie datos ni reglas. "Solo lee" se entiende como: nunca modifica evaluaciones, reglas ni modelos. Enviar informes exige definir destinatarios y permisos, y queda para cuando haya login y roles.
 - Un flujo de comportamiento necesita datos de comportamiento del cliente (pagos, mora, uso de la línea). Entran como variables propias del cliente a través del mismo seam de lectura que usa el chat, no como tablas de Relevo. Si el cliente no los entrega, el flujo no puede correr: ese requisito es del cliente.
 
+## Datos de prueba de cartera
+
+Aunque los datos posteriores a la evaluación sean del cliente, para **probar y demostrar** el producto (chat, monitoreo, simulador, flujo de comportamiento) hay que tenerlos. Se generan sintéticos: conversión, desembolso, pagos y mora.
+
+- Es una herramienta offline, como `src/relevo/sintetico.py` (hoy genera la cartera de entrenamiento del scorecard con un default a 12 meses): no es parte del runtime ni del producto vendido.
+- Se enlazan con las evaluaciones por el id de solicitud, el mismo contrato que se le pide al cliente. Así lo sintético ejercita el seam de lectura real (`FuenteDeCartera`) con un adapter de prueba, y no un camino especial.
+- Deben ser coherentes con el modelo: la mora observada por rating tiene que acompañar la PD que el scorecard asigna, con algo de ruido, para que el simulador y el monitoreo muestren resultados verosímiles. Deben incluir también desvíos plantados (por ejemplo un rating que se deteriora) para poder probar las alertas.
+- Son determinísticos dada la semilla, y quedan fuera de git si son grandes (como `data/`).
+
 ## Preguntas abiertas
 
 - **Precio por módulo**: sin definir. El brief comercial en borrador propone tres formas de empezar (diagnóstico, proyecto, servicio continuo), es decir, un modelo con servicios, no solo licencias. Mientras tanto, el diseño debe poder contar por módulo, sin decidir todavía cómo se cobra: evaluaciones del motor, documentos procesados, consultas del chat y su costo en tokens, y modelos activos por cliente.
