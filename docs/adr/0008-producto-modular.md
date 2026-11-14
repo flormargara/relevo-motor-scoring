@@ -9,7 +9,7 @@ Relevo se puede comprar entero o por partes. Los módulos vendibles son cuatro:
 1. **Motor y backoffice de reglas**: evalúa una solicitud y devuelve veredicto, oferta y traza; el backoffice edita, publica y compara versiones de reglas (ADR 0007).
 2. **Modelos de ML**: calculan score/PD a partir de variables. Tres variantes según el origen de los datos: externos (bureau, CENDEU, ARCA), propios del cliente, o mixtos.
 3. **Lectura de documentos**: convierte documentos subidos (balances, constancias) en campos con confianza.
-4. **Chat con tus datos**: uno o más agentes que responden preguntas sobre cualquier etapa del ciclo (evaluación, oferta, conversión, desembolso), elaboran informes, simulan cambios de política, estiman resultados sobre una base de clientes y emiten alertas.
+4. **Chat con tus datos**: uno o más agentes que responden preguntas sobre cualquier etapa del ciclo (evaluación, oferta, conversión, desembolso), elaboran informes, simulan cambios de política, estiman resultados sobre una base de clientes y emiten alertas. Incluye el **monitoreo** (parte de lo que ya registran los flujos; mantiene reportes actualizados y envía informes) y el **simulador de políticas** (backtesting sobre la historia).
 
 Cada módulo se entrega **de las dos formas**: como servicio con API, para que el cliente lo integre en su sistema, y como aplicación con pantalla propia. La pantalla es un cliente de la API del módulo, nunca un camino aparte a los datos: así lo que se ve en pantalla y lo que se integra por API es lo mismo.
 
@@ -62,7 +62,18 @@ Pueden ser ambas cosas. Para el motor da igual: un modelo es "variables → scor
 
 Ambos se versionan igual y las reglas referencian la versión exacta, como hoy con `modelos/*.json`.
 
+## Alcance respecto del brief comercial
+
+- **Cobranzas queda afuera** de este producto: sería un producto aparte, con sus propios módulos y datos.
+- **Comportamiento y límites** no es un módulo: es un **flujo más del motor** (aumento o renovación de límite), como los de originación de monotributistas y de PyMEs. Tiene reglas, catálogo de variables y versiones propios (ADR 0007: el dueño de las reglas es el flujo). Lo nuevo es que parte de un cliente existente, así que necesita datos propios de su comportamiento (pagos, mora, uso de la línea) además de las fuentes externas.
+- **Monitoreo y gobierno** es parte del chat: lee lo que los flujos ya registran (evaluaciones, ofertas, conversiones, desembolsos) y puede mantener reportes al día, enviar informes y emitir alertas. No necesita un módulo ni un almacenamiento aparte, solo que los flujos registren bien.
+- **Simulador de políticas** también es parte del chat: ejecuta el motor sobre datos guardados con reglas candidatas y compara. Es lectura, no escribe evaluaciones ni publica reglas.
+
+### Consecuencias de esta decisión
+
+- Enviar informes y mantener reportes actualizados es una **acción de salida** (un mail, un archivo generado), aunque no cambie datos ni reglas. "Solo lee" se entiende como: nunca modifica evaluaciones, reglas ni modelos. Enviar informes exige definir destinatarios y permisos, y queda para cuando haya login y roles.
+- Un flujo de comportamiento obliga a que el repositorio guarde datos posteriores a la originación. Es el mismo trabajo que ya pide el chat, así que ambos se benefician de resolverlo una vez.
+
 ## Preguntas abiertas
 
 - **Precio por módulo**: sin definir. El brief comercial en borrador propone tres formas de empezar (diagnóstico, proyecto, servicio continuo), es decir, un modelo con servicios, no solo licencias. Mientras tanto, el diseño debe poder contar por módulo, sin decidir todavía cómo se cobra: evaluaciones del motor, documentos procesados, consultas del chat y su costo en tokens, y modelos activos por cliente.
-- **Alcance de la oferta**: el brief también ofrece cobranzas, comportamiento y límites, monitoreo y gobierno, y simulador de políticas, que no son ninguno de los cuatro módulos de este ADR. Hay que decidir si son módulos propios o parte de los existentes (el simulador, por ejemplo, encaja en el chat, que lo lee todo y no escribe).
