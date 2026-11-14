@@ -53,7 +53,16 @@ Cada módulo expone una interface chica y estable; lo que hay detrás puede camb
 - Sin autenticación (ADR 0007): vender como servicio a terceros exige login y claves de API por cliente antes del primer despliegue externo.
 - Los datos de cada cliente deben quedar aislados. Hoy hay una sola base; la multi-tenencia no está resuelta.
 
+## Modelos entrenados en Relevo o traídos por el cliente
+
+Pueden ser ambas cosas. Para el motor da igual: un modelo es "variables → score/PD" con nombre, versión y lista de variables que usa, sin importar quién lo entrenó. Lo que cambia es el origen que queda registrado junto a cada versión:
+
+- **Entrenado en Relevo**: con datos externos, propios del cliente o mixtos. Hace falta un camino de entrenamiento y validación, que hoy no existe en el repo.
+- **Traído por el cliente**: llega ya entrenado y Relevo lo registra y lo ejecuta. Hace falta fijar un formato de entrega (coeficientes del scorecard, o un modelo serializado) y validar que sus variables existan en el catálogo del flujo.
+
+Ambos se versionan igual y las reglas referencian la versión exacta, como hoy con `modelos/*.json`.
+
 ## Preguntas abiertas
 
-- ¿Los modelos de ML con datos propios del cliente se entrenan en Relevo o los trae el cliente ya entrenados? Cambia el contrato (variables → score, o además datos → modelo).
-- ¿Cómo se cobra cada módulo? No afecta el diseño de interfaces, pero sí qué métricas de uso hay que registrar.
+- **Precio por módulo**: sin definir. El brief comercial en borrador propone tres formas de empezar (diagnóstico, proyecto, servicio continuo), es decir, un modelo con servicios, no solo licencias. Mientras tanto, el diseño debe poder contar por módulo, sin decidir todavía cómo se cobra: evaluaciones del motor, documentos procesados, consultas del chat y su costo en tokens, y modelos activos por cliente.
+- **Alcance de la oferta**: el brief también ofrece cobranzas, comportamiento y límites, monitoreo y gobierno, y simulador de políticas, que no son ninguno de los cuatro módulos de este ADR. Hay que decidir si son módulos propios o parte de los existentes (el simulador, por ejemplo, encaja en el chat, que lo lee todo y no escribe).
