@@ -100,6 +100,27 @@ _Avoid_: log, auditoría
 **Versión de reglas**:
 Una versión identificada e inmutable del conjunto de killers, derivaciones, ratings y política de un flujo.
 
+## Después de la evaluación
+
+Estos datos son de la entidad: Relevo los lee por el seam `FuenteDeCartera`, enlazados por el id de solicitud, y no los guarda (ADR 0008).
+
+**Conversión**:
+Que el solicitante tome la oferta. Una oferta no convertida no genera desembolso.
+
+**Desembolso**:
+La entrega del crédito convertido: fecha, monto, plazo y tasa.
+
+**Mora**:
+Los días de atraso de un crédito desembolsado, informados mes a mes junto con el saldo y lo pagado.
+_Avoid_: atraso (como término técnico), incumplimiento
+
+**Default**:
+Mora de 90 días o más dentro de los primeros 12 meses desde el desembolso. Es el evento que estima la PD.
+_Avoid_: mora (la mora es el atraso, el default es su versión grave)
+
+**Cartera**:
+Los créditos desembolsados de la entidad con su historia de pagos y mora.
+
 ## Edición de reglas
 
 **Catálogo de variables**:

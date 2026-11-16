@@ -107,6 +107,20 @@ Fronteras: `lectura_documentos` solo importa `clientes_claude`; a `chat` solo lo
 
 Guarda en SQLite: solicitudes, evaluaciones (con snapshots, traza, versión de reglas y veredicto), informes, chat, resoluciones del analista, y las versiones y el borrador de las reglas de cada flujo. También lista la bandeja y borra una solicitud. Tiene un solo adapter (SQLite; los tests usan `:memory:`), así que no lleva seam propio.
 
+## 5b. Seam `FuenteDeCartera`: lo que pasó después de evaluar
+
+```python
+class FuenteDeCartera(Protocol):
+    def registros(self, solicitud_ids: Iterable[str] | None = None) -> list[RegistroCartera]: ...
+
+RegistroCartera(solicitud_id, convertida, desembolso: Desembolso | None, estados: tuple[EstadoMensual, ...])
+EstadoMensual(periodo, saldo, pagado, dias_mora)
+```
+
+La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008): Relevo los lee en su origen, nunca los guarda, y los enlaza con sus evaluaciones por el id de solicitud. Lo van a usar el chat (monitoreo y simulador) y el flujo de comportamiento. `RegistroCartera.en_default()` usa la misma definición que el scorecard: 90 días de mora dentro de los primeros 12 meses.
+
+**Adapters:** `CarteraEnArchivos` (tres CSV: `conversiones`, `desembolsos`, `estados`; la entidad declara cómo se llama su columna del id de solicitud) y `CarteraEnMemoria` para tests. Los de base SQL y API se agregan cuando haya una entidad que los pida. Una solicitud de la que la entidad no informó nada no aparece, que no es lo mismo que una oferta no convertida.
+
 ## 6. `app`
 
 FastAPI más plantillas Jinja y JS sin frameworks. Tiene cuatro pantallas: Bandeja, Caso, Reglas (el editor de cada flujo) e Historial de reglas. Es delgada a propósito: arma la solicitud, llama a `evaluar`, guarda el resultado y lo muestra.
@@ -114,6 +128,8 @@ FastAPI más plantillas Jinja y JS sin frameworks. Tiene cuatro pantallas: Bande
 ## 7. `sintetico` (offline)
 
 Genera las carteras sintéticas por segmento, entrena el scorecard logístico, exporta los coeficientes y crea los documentos de ejemplo. No es parte del runtime.
+
+`sintetico_cartera` (también offline) inventa lo que pasó después de evaluar las solicitudes otorgadas de una base y lo escribe en el formato de `CarteraEnArchivos`, así se lee por el seam real.
 
 ## Orden de construcción (TDD, de adentro hacia afuera)
 
@@ -192,3 +208,12 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **Borrador compartido**, uno por flujo, guardado sin validar. Publicar exige que parta de la vigente (bloqueo optimista). Si alguien publicó en el medio, el borrador se puede pasar a la vigente conservando su contenido: la lista de cambios muestra también lo que publicarlo desharía. Volver atrás es cargar una versión vieja en el borrador y publicarla.
 - **Sin autenticación**: el autor de cada publicación es un nombre declarado, con motivo obligatorio. Dos personas editando a la vez se pisan el borrador (el último que guarda gana).
 - **Flujo de entrada**: una solicitud nueva entra por el flujo de originación de su segmento (`flujo_de_originacion`).
+
+## Decisiones tomadas al construir la cartera sintética (ADR 0008)
+
+- **Parte de las otorgadas**: última evaluación `APROBADO`, o `DERIVAR` con resolución del analista `aprobar`, y con oferta. Los datos de cartera se enlazan por id de solicitud.
+- **Coherente con la PD**: cada crédito desembolsado entra en default (90 días) dentro de los 12 meses con probabilidad igual a la PD de su evaluación, con ruido lognormal de media 1. Un test verifica que el default observado por rating acompaña la PD.
+- **Conversión por rating** con selección adversa (A 55 % → E 75 %). Quien no entra en default puede atrasarse un mes y regularizar al siguiente, para que la mora temprana no sea sinónimo de default.
+- **Desvío plantado por defecto**: el rating C triplica su PD en los desembolsos de los últimos 4 meses antes del corte (`--sin-desvio` lo saca). Sirve para probar alertas.
+- **Solo meses cerrados** a la fecha de corte, y un generador por solicitud (semilla + id): agregar evaluaciones no cambia la cartera de las que ya estaban.
+- Usa solo la biblioteca estándar, así que no necesita el extra `sintetico`.
