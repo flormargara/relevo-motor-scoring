@@ -23,7 +23,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 RAIZ = Path(__file__).resolve().parents[2]
-MODELO_API = "claude-haiku-5-5"
+# Todos los agentes usan Haiku por costo, por CLI y por API. ``RELEVO_MODELO`` lo cambia.
+MODELO = "claude-haiku-5-5"
+MODELO_API = MODELO  # nombre anterior
+# Haiku no tiene fallback del lado del servidor ante una negativa: se manda solo a los que sí.
+SIN_FALLBACK_DE_SERVIDOR = ("claude-haiku-",)
 TIPOS_IMAGEN = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -60,7 +64,7 @@ class ClaudeCLI:
     def __init__(
         self,
         ejecutable: str = "claude",
-        modelo: str | None = None,
+        modelo: str | None = MODELO,
         timeout: float = 300,
         ejecutar: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     ):
@@ -114,10 +118,11 @@ class ClaudeCLI:
 class ClaudeAPI:
     """API de Anthropic con el SDK oficial.
 
-    Usa ``fallbacks: "default"``: si el modelo declina una solicitud por seguridad, la
-    API la reintenta con otro modelo dentro de la misma llamada."""
+    Con los modelos que lo admiten usa ``fallbacks: "default"``: si el modelo declina una
+    solicitud por seguridad, la API la reintenta con otro modelo dentro de la misma llamada.
+    Haiku no lo admite: una negativa es ``AgenteNoDisponible``."""
 
-    def __init__(self, modelo: str = MODELO_API, esfuerzo: str = "medium", cliente: Any = None):
+    def __init__(self, modelo: str = MODELO, esfuerzo: str = "medium", cliente: Any = None):
         self.modelo = modelo
         self.esfuerzo = esfuerzo
         self._cliente = cliente
@@ -140,10 +145,10 @@ class ClaudeAPI:
             "model": self.modelo,
             "max_tokens": 16000,
             "output_config": {"effort": self.esfuerzo},
-            "betas": ["server-side-fallback-2026-07-01"],
-            "fallbacks": "default",
             "messages": [{"role": "user", "content": contenido}],
         }
+        if not self.modelo.startswith(SIN_FALLBACK_DE_SERVIDOR):
+            parametros |= {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
         if sistema:
             parametros["system"] = sistema
         try:
@@ -187,14 +192,15 @@ def cargar_env(archivo: Path = RAIZ / ".env") -> None:
 
 
 def cliente_desde_entorno() -> ClienteClaude:
-    """``RELEVO_AGENTE``: ``cli`` (por defecto), ``api`` o ``ninguno``. ``RELEVO_MODELO`` elige el modelo."""
+    """``RELEVO_AGENTE``: ``cli`` (por defecto), ``api`` o ``ninguno``. El modelo es Haiku en los dos
+    (``MODELO``); ``RELEVO_MODELO`` lo cambia."""
     cargar_env()
     tipo = os.environ.get("RELEVO_AGENTE", "cli").strip().lower()
-    modelo = os.environ.get("RELEVO_MODELO") or None
+    modelo = os.environ.get("RELEVO_MODELO") or MODELO
     if tipo == "ninguno":
         return SinAgente()
     if tipo == "api":
-        return ClaudeAPI(modelo=modelo or MODELO_API)
+        return ClaudeAPI(modelo=modelo)
     if tipo == "cli":
         return ClaudeCLI(ejecutable=shutil.which("claude") or "claude", modelo=modelo)
     raise ValueError(f"RELEVO_AGENTE desconocido: {tipo!r} (cli | api | ninguno)")

@@ -59,7 +59,7 @@ echo 'RELEVO_AGENTE=api' >> .env
 echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
 ```
 
-`RELEVO_AGENTE` acepta `cli` (por defecto), `api` o `ninguno`, y `RELEVO_MODELO` elige el modelo. En `ejemplos/documentos/` hay un balance y una constancia sintéticos para probar el agente documental. Los archivos subidos quedan en `data/documentos/<solicitud>/` y se borran con la solicitud.
+`RELEVO_AGENTE` acepta `cli` (por defecto), `api` o `ninguno`. Todos los agentes usan **Claude Haiku** (`claude-haiku-5-5`) por costo, por CLI y por API; `RELEVO_MODELO` lo cambia. Con Haiku no hay fallback del lado del servidor: si el modelo declina una solicitud, el agente queda no disponible y el veredicto sale igual. En `ejemplos/documentos/` hay un balance y una constancia sintéticos para probar el agente documental. Los archivos subidos quedan en `data/documentos/<solicitud>/` y se borran con la solicitud.
 
 ## Correr los tests
 

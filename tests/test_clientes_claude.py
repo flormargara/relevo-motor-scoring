@@ -96,10 +96,37 @@ def test_api_manda_pdf_imagen_y_texto(tmp_path):
     p = sdk.parametros
     assert p["model"] == "claude-haiku-5-5"
     assert p["system"] == "Sos preciso."
-    assert p["fallbacks"] == "default"
+    assert "fallbacks" not in p and "betas" not in p  # Haiku no tiene fallback de servidor
     tipos = [b["type"] for b in p["messages"][0]["content"]]
     assert tipos == ["document", "image", "text", "text"]
     assert "Ventas: 100" in p["messages"][0]["content"][2]["text"]
+
+
+def test_api_con_otro_modelo_pide_fallback_de_servidor():
+    sdk = SdkFalso(mensaje("listo"))
+
+    ClaudeAPI(modelo="claude-sonnet-5-5", cliente=sdk).completar("hola")
+
+    assert sdk.parametros["fallbacks"] == "default"
+    assert sdk.parametros["betas"] == ["server-side-fallback-2026-07-01"]
+
+
+def test_cli_usa_haiku_por_defecto():
+    proceso = Proceso(ok("hola"))
+
+    ClaudeCLI(ejecutar=proceso).completar("hola")
+
+    comando = proceso.llamadas[0][0]
+    assert comando[comando.index("--model") + 1] == "claude-haiku-5-5"
+
+
+def test_todos_los_agentes_usan_haiku_salvo_que_se_pida_otro(monkeypatch):
+    monkeypatch.delenv("RELEVO_MODELO", raising=False)
+    for tipo in ("cli", "api"):
+        monkeypatch.setenv("RELEVO_AGENTE", tipo)
+        assert cliente_desde_entorno().modelo == "claude-haiku-5-5"
+    monkeypatch.setenv("RELEVO_MODELO", "claude-sonnet-5-5")
+    assert cliente_desde_entorno().modelo == "claude-sonnet-5-5"
 
 
 def test_api_declinada_o_con_error_es_agente_no_disponible():
