@@ -1,51 +1,13 @@
 {% extends "base.html" %}
-{% set seccion = "bandeja" %}
-{% block titulo %}Bandeja{% endblock %}
+{% set seccion = "nueva" %}
+{% block titulo %}Nueva solicitud{% endblock %}
 {% block contenido %}
-<h1>Bandeja</h1>
-<p class="sub">Solicitudes de crédito de capital de trabajo. Cada evaluación consulta las fuentes en vivo.</p>
+<h1>Nueva solicitud</h1>
+<p class="sub">Alta de una solicitud de crédito de capital de trabajo. Se evalúa al cargarla, consultando las fuentes en vivo.</p>
 
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
 <section class="tarjeta">
-  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <h2 style="margin: 0;">Solicitudes</h2>
-    {% if filas | selectattr("veredicto", "none") | list %}
-    <form class="inline" method="post" action="/evaluar-pendientes"><button>Evaluar pendientes</button></form>
-    {% endif %}
-  </div>
-  {% if filas %}
-  <table>
-    <thead><tr>
-      <th>Solicitante</th><th>Segmento</th><th class="num">Monto</th><th class="num">Plazo</th>
-      <th>Veredicto</th><th>Rating</th><th>Evaluada</th><th></th>
-    </tr></thead>
-    <tbody>
-    {% for fila in filas %}
-      {% set s = fila.solicitud %}
-      <tr>
-        <td><a href="/solicitudes/{{ s.id }}">{{ fila.denominacion or s.solicitud.cuit }}</a>
-          <div class="suave"><code>{{ s.solicitud.cuit }}</code>{% if s.origen == "precargado" %} · precargado{% endif %}</div></td>
-        <td>{{ "PyME" if s.solicitud.segmento == "pyme" else "Monotributista" }}</td>
-        <td class="num">{{ s.solicitud.monto | pesos }}</td>
-        <td class="num">{{ s.solicitud.plazo_meses }} m</td>
-        <td>{% if fila.veredicto %}<span class="chip {{ fila.veredicto.value }}">{{ fila.veredicto.value }}</span>{% else %}<span class="chip">sin evaluar</span>{% endif %}</td>
-        <td>{{ fila.rating or "—" }}</td>
-        <td class="suave">{{ fila.evaluada_en | fecha }}</td>
-        <td>
-          <form class="inline" method="post" action="/solicitudes/{{ s.id }}/evaluar"><button>{{ "Reevaluar" if fila.veredicto else "Evaluar" }}</button></form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="suave">No hay solicitudes. Cargá una abajo.</p>
-  {% endif %}
-</section>
-
-<section class="tarjeta">
-  <h2>Nueva solicitud</h2>
   <form method="post" action="/solicitudes" id="alta" enctype="multipart/form-data" data-espera="Leyendo documentos y evaluando…">
     <div class="grilla">
       <div><label for="cuit">CUIT / CUIL</label><input id="cuit" name="cuit" required placeholder="30-12345678-9" value="{{ formulario.cuit or '' }}"></div>

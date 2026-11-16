@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set seccion = "bandeja" %}
+{% set seccion = "historico" %}
 {% set s = guardada.solicitud %}
 {% set nombre = ficha.nombre or s.cuit %}
 {% block titulo %}{{ nombre }}{% endblock %}
@@ -19,7 +19,7 @@
 {%- endmacro %}
 
 {% block contenido %}
-<p class="suave" style="margin: 0 0 4px;"><a href="/">← Bandeja</a></p>
+<p class="suave" style="margin: 0 0 4px;"><a href="/">← Histórico</a></p>
 <div class="acciones" style="justify-content: space-between; align-items: flex-start;">
   <div>
     <h1>{{ nombre }}</h1>

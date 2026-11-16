@@ -309,14 +309,25 @@ class Repositorio:
         """Borra la solicitud y todo lo asociado (documentos, evaluaciones, snapshots, informes, chat)."""
         self._ejecutar("DELETE FROM solicitudes WHERE id = ?", (id,))
 
-    def bandeja(self) -> list[FilaBandeja]:
+    def bandeja(
+        self, buscar: str | None = None, limite: int | None = None, desplazamiento: int = 0
+    ) -> list[FilaBandeja]:
+        """Las solicitudes con su última evaluación, de la más nueva a la más vieja.
+
+        ``buscar`` filtra por CUIT (con o sin guiones), denominación o id de solicitud."""
+        donde, parametros = _filtro_bandeja(buscar)
+        paginado = " LIMIT ? OFFSET ?" if limite is not None else ""
+        if limite is not None:
+            parametros += [limite, desplazamiento]
         filas = self._ejecutar(
-            """
+            f"""
             SELECT s.*, e.id AS evaluacion_id, e.veredicto, e.rating, e.creada_en AS evaluada_en, e.denominacion
             FROM solicitudes s
             LEFT JOIN evaluaciones e ON e.id = (SELECT MAX(id) FROM evaluaciones WHERE solicitud_id = s.id)
-            ORDER BY s.creada_en DESC, s.id
-            """
+            {donde}
+            ORDER BY s.creada_en DESC, s.id{paginado}
+            """,
+            parametros,
         ).fetchall()
         return [
             FilaBandeja(
@@ -329,6 +340,22 @@ class Repositorio:
             )
             for f in filas
         ]
+
+    def contar_solicitudes(self, buscar: str | None = None) -> int:
+        donde, parametros = _filtro_bandeja(buscar)
+        sql = (
+            "SELECT COUNT(*) FROM solicitudes s LEFT JOIN evaluaciones e "
+            f"ON e.id = (SELECT MAX(id) FROM evaluaciones WHERE solicitud_id = s.id) {donde}"
+        )
+        return self._ejecutar(sql, parametros).fetchone()[0]
+
+    def sin_evaluar(self) -> list[str]:
+        """Los ids de las solicitudes que todavía no tienen ninguna evaluación."""
+        filas = self._ejecutar(
+            "SELECT id FROM solicitudes s WHERE NOT EXISTS (SELECT 1 FROM evaluaciones WHERE solicitud_id = s.id) "
+            "ORDER BY creada_en DESC, id"
+        ).fetchall()
+        return [f["id"] for f in filas]
 
     # --- evaluaciones -----------------------------------------------------
 
@@ -587,6 +614,19 @@ def _snapshot(fila: sqlite3.Row) -> Snapshot:
         intentos=fila["intentos"],
         nota=fila["nota"],
     )
+
+
+def _filtro_bandeja(buscar: str | None) -> tuple[str, list[Any]]:
+    """El WHERE de la búsqueda de la bandeja: CUIT (sin guiones), denominación o id."""
+    texto = (buscar or "").strip()
+    if not texto:
+        return "", []
+    condiciones = ["e.denominacion LIKE ? COLLATE NOCASE", "s.id LIKE ?"]
+    parametros: list[Any] = [f"%{texto}%", f"%{texto}%"]
+    if digitos := "".join(c for c in texto if c.isdigit()):
+        condiciones.append("s.cuit LIKE ?")
+        parametros.append(f"%{digitos}%")
+    return "WHERE " + " OR ".join(condiciones), parametros
 
 
 def _solicitud(fila: sqlite3.Row) -> SolicitudGuardada:
