@@ -21,12 +21,13 @@ from typing import Any
 import httpx
 import yaml
 
-from relevo import agentes, identificacion
+from relevo import chat, identificacion, lectura_documentos
 from relevo.catalogo import flujo_de_originacion
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
 from relevo.fuentes import AdapterFuente
+from relevo.fuentes.documentos import variables_documentos
 from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.motor import evaluar
 from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas
@@ -143,7 +144,7 @@ class Servicio:
             ahora=self.ahora(),
             fecha_nacimiento=nacimiento,
         )
-        manual = agentes.documento_manual(campos_manuales or {})
+        manual = lectura_documentos.documento_manual(campos_manuales or {})
         if manual:
             self.repositorio.guardar_documento(id, MANUAL, None, manual.a_dict())
         for orden, (nombre, contenido) in enumerate(archivos, 1):
@@ -164,15 +165,15 @@ class Servicio:
         for doc in self.repositorio.documentos(solicitud_id):
             if doc.ruta:
                 try:
-                    extraido = agentes.extraer_documento(Path(doc.ruta), self.cliente_claude)
-                except agentes.AgenteNoDisponible as error:
+                    extraido = lectura_documentos.extraer_documento(Path(doc.ruta), self.cliente_claude)
+                except lectura_documentos.AgenteNoDisponible as error:
                     self.repositorio.actualizar_documento(doc.id, None, str(error))
                     continue
                 self.repositorio.actualizar_documento(doc.id, extraido.a_dict(), None)
                 extraidos.append(extraido)
             elif doc.extraido:
-                extraidos.append(agentes.DocumentoExtraido.desde_dict(doc.extraido))
-        variables = agentes.variables_documentos(
+                extraidos.append(lectura_documentos.DocumentoExtraido.desde_dict(doc.extraido))
+        variables = variables_documentos(
             extraidos, guardada.solicitud.segmento, guardada.solicitud.cuit, self.ahora().date()
         )
         self.repositorio.actualizar_documentos(solicitud_id, variables)
@@ -187,7 +188,7 @@ class Servicio:
     def generar_informe(self, evaluacion_id: int) -> str:
         """Redacta y guarda el informe de riesgo. Lanza ``AgenteNoDisponible`` si el agente falla."""
         evaluacion = self.repositorio.evaluacion(evaluacion_id).evaluacion
-        texto = agentes.redactar_informe(evaluacion, self.cliente_claude)
+        texto = chat.redactar_informe(evaluacion, self.cliente_claude)
         self.repositorio.guardar_informe(evaluacion_id, texto)
         return texto
 
@@ -197,8 +198,8 @@ class Servicio:
         if not pregunta:
             raise SolicitudInvalida("la pregunta está vacía")
         evaluacion = self.repositorio.evaluacion(evaluacion_id).evaluacion
-        historial = [agentes.Turno(m.rol, m.texto) for m in self.repositorio.chat(evaluacion_id)]
-        respuesta = agentes.responder(evaluacion, historial, pregunta, self.cliente_claude)
+        historial = [chat.Turno(m.rol, m.texto) for m in self.repositorio.chat(evaluacion_id)]
+        respuesta = chat.responder(evaluacion, historial, pregunta, self.cliente_claude)
         self.repositorio.agregar_mensaje(evaluacion_id, "analista", pregunta)
         self.repositorio.agregar_mensaje(evaluacion_id, "agente", respuesta)
         return respuesta

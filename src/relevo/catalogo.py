@@ -15,13 +15,12 @@ from pathlib import Path
 
 import yaml
 
-from relevo.agentes import VARIABLES_POR_SEGMENTO
 from relevo.condiciones import CondicionInvalida, Expresion
 from relevo.fuentes import Variable
 from relevo.fuentes.arca import Arca
 from relevo.fuentes.badlar import Badlar
 from relevo.fuentes.cendeu import Cendeu, Cheques
-from relevo.fuentes.documentos import Documentos
+from relevo.fuentes.documentos import VARIABLES_POR_SEGMENTO, Documentos
 from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.fuentes.igj import Igj
 from relevo.fuentes.juguete import Bureau, Propios
