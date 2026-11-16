@@ -49,7 +49,7 @@ Cada módulo expone una interface chica y estable; lo que hay detrás puede camb
 - El agente de IA nunca decide (ADR 0001) y eso vale también para el chat: puede explicar y simular, pero no publica reglas ni cambia un veredicto. **Por ahora el chat es de solo lectura**; ejecutar cambios (por ejemplo publicar una política simulada) queda fuera hasta que haya login, roles y aprobación explícita.
 - Una simulación del chat corre el motor sobre datos guardados y no escribe evaluaciones: es una lectura, no una evaluación nueva.
 - **Los datos posteriores a la evaluación (conversión, desembolso, pagos, mora) son responsabilidad del cliente y no forman parte del producto.** Relevo registra lo que decide (solicitud, evaluación, oferta, traza); lo que pasa después vive en los sistemas del cliente. El chat **los puede leer**, pero Relevo no los almacena, modela ni valida. Hace falta un **seam de lectura** (por ejemplo `FuenteDeCartera`) con adapters por tipo de origen del cliente (base SQL, API, archivos), de solo lectura, y que el cliente declare cómo se enlaza cada registro con la evaluación (el id de solicitud).
-- Hoy hay un solo proceso, `app.py` expone páginas y endpoints juntos. Para entregar por API hay que separar, por módulo, la API de las páginas, sin necesidad de separar procesos todavía.
+- Hoy hay un solo proceso, `app.py` expone páginas y endpoints juntos. Para entregar por API hay que separar, por módulo, la API de las páginas, sin necesidad de separar procesos todavía (la separación en repositorios y su secuencia están más abajo).
 - Sin autenticación (ADR 0007): vender como servicio a terceros exige login y claves de API por cliente antes del primer despliegue externo.
 - Los datos de cada cliente deben quedar aislados. Hoy hay una sola base; la multi-tenencia no está resuelta.
 
@@ -82,6 +82,38 @@ Aunque los datos posteriores a la evaluación sean del cliente, para **probar y 
 - Se enlazan con las evaluaciones por el id de solicitud, el mismo contrato que se le pide al cliente. Así lo sintético ejercita el seam de lectura real (`FuenteDeCartera`) con un adapter de prueba, y no un camino especial.
 - Deben ser coherentes con el modelo: la mora observada por rating tiene que acompañar la PD que el scorecard asigna, con algo de ruido, para que el simulador y el monitoreo muestren resultados verosímiles. Deben incluir también desvíos plantados (por ejemplo un rating que se deteriora) para poder probar las alertas.
 - Son determinísticos dada la semilla, y quedan fuera de git si son grandes (como `data/`).
+
+## Un repositorio por producto vendible
+
+La lectura de documentos y el chat con tus datos se desarrollan en la consultora y se venden por separado. Eso les da clientes, releases y roadmap propios, y cada cliente debe recibir solo lo que compró. Por eso el destino es **un repositorio por producto**:
+
+| Repositorio | Contenido | Por qué |
+|---|---|---|
+| `relevo-motor` | Motor, backoffice de reglas y modelos | Comparten el catálogo de variables, el seam `Consultor` y las versiones. Separar los modelos del motor sería artificial. |
+| `relevo-documentos` | Lectura de documentos | No depende de nadie: entra un archivo y sale un campo con valor y confianza. Es el corte más limpio. |
+| `relevo-chat` | Chat, monitoreo y simulador | Depende de los otros en solo lectura, nada depende de él, y cambia más rápido que el motor. |
+
+Condiciones:
+
+- **Los repositorios se hablan solo por API, nunca por import.** El chat llama a la API del motor para evaluar y simular, y lee la cartera por `FuenteDeCartera`. Los documentos llegan al motor como variables con origen y confianza, como cualquier otra fuente.
+- **Los contratos de la tabla anterior se versionan** y se publican como esquema (OpenAPI o un paquete chico de tipos), sin copiarlos a mano entre repositorios.
+- **Cada producto corre sin los demás.** El chat debe funcionar contra un motor que no sea el de Relevo, y los documentos sin motor. Si no, vender por separado es solo en teoría.
+- **Los datos se separan por dueño y por cliente**, no por repositorio: un bucket de datos públicos compartidos (padrones ARCA, IGJ) y un prefijo con credenciales propias por cliente. Los datos de cartera del cliente se leen en su origen y no se copian.
+
+### Secuencia
+
+No se separa todo de entrada. Primero se parte el código dentro del repo actual por estas fronteras, con reglas de importación chequeadas por test o por `import-linter`. Un repo se extrae cuando su frontera está estable y hay un primer cliente real del producto. Documentos va primero, por ser el más barato de extraer.
+
+Lo que hay que desarmar del código actual:
+
+- `agentes.py` mezcla lectura de documentos con el informe de riesgo y las preguntas del caso: lo documental va a documentos y lo conversacional al chat.
+- `app.py` expone páginas y endpoints juntos: cada producto necesita su propia API, además de la pantalla.
+- Hay una sola base: cada producto necesita su almacenamiento y sus credenciales por cliente.
+
+### Alternativas descartadas
+
+- **Monorepo definitivo con módulos como paquetes**: es lo más simple y sirve mientras todo lo desarrolle el mismo equipo. Se descartó como destino porque los productos se venden por separado y el cliente no debe recibir el código de los que no compró. Sigue siendo el punto de partida de la secuencia.
+- **Un repo por módulo, incluidos modelos**: los modelos se conectan al motor por el seam y comparten catálogo y versiones con él. Separarlos hoy suma coordinación sin beneficio.
 
 ## Preguntas abiertas
 
