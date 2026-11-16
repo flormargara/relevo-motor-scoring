@@ -102,7 +102,7 @@ Condiciones:
 
 ### Secuencia
 
-No se separa todo de entrada. Primero se parte el código dentro del repo actual por estas fronteras, con reglas de importación chequeadas por test o por `import-linter`. Un repo se extrae cuando su frontera está estable y hay un primer cliente real del producto. Documentos va primero, por ser el más barato de extraer.
+**Por ahora no se separa nada.** Documentos y chat todavía no existen como productos: lo que hay en el repo (agentes de documentos, informe y preguntas del caso) sirve para seguir probando el motor y se mantiene tal cual. La separación empieza cuando se desarrollen esos productos. Entonces: primero se parte el código dentro del repo actual por estas fronteras, con reglas de importación chequeadas por test o por `import-linter`. Un repo se extrae cuando su frontera está estable y hay un primer cliente real del producto. Documentos va primero, por ser el más barato de extraer.
 
 Lo que hay que desarmar del código actual:
 
