@@ -6,6 +6,7 @@ después sea mecánico:
 
 - ``lectura_documentos`` no importa nada de Relevo salvo el seam ``clientes_claude``.
 - Nadie importa ``chat`` salvo la capa que compone la app (``servicio`` y ``app``).
+- ``monitoreo`` es parte del chat: solo lo importan el chat y la composición.
 """
 
 import ast
@@ -55,9 +56,16 @@ def test_solo_la_composicion_importa_el_chat():
     assert quienes <= COMPOSICION
 
 
+def test_solo_el_chat_y_la_composicion_importan_el_monitoreo():
+    quienes = {modulo for modulo, importados in _grafo().items() if _toca(importados, "relevo.monitoreo")}
+
+    assert quienes <= COMPOSICION | {"relevo.chat"}
+
+
 def test_el_test_ve_los_imports_reales():
     """Si el grafo quedara vacío, los otros tests pasarían sin controlar nada."""
     grafo = _grafo()
 
     assert _toca(grafo["relevo.servicio"], "relevo.chat")
+    assert _toca(grafo["relevo.chat"], "relevo.monitoreo")
     assert _toca(grafo["relevo.fuentes.documentos"], "relevo.lectura_documentos")

@@ -1,9 +1,9 @@
-"""Las pantallas: Histórico, Nueva solicitud, Caso y Backoffice (el editor de reglas), con Jinja.
+"""Las pantallas: Histórico, Nueva solicitud, Caso, Monitoreo y Backoffice (el editor de reglas), con Jinja.
 
 Son delgadas a propósito: arman la solicitud, llaman al servicio (que llama a ``evaluar``),
 guardan y muestran. Quedan fuera del esquema OpenAPI: el contrato del motor es ``api``.
-Los endpoints JSON del editor de reglas (validar, borrador, publicar) son internos de
-la pantalla Backoffice, no parte de ese contrato.
+Los endpoints JSON del editor de reglas (validar, borrador, publicar) y el de preguntas
+de Monitoreo son internos de sus pantallas, no parte de ese contrato.
 """
 
 from __future__ import annotations
@@ -19,16 +19,18 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from relevo import presentacion
+from relevo.cartera import CarteraInvalida
 from relevo.catalogo import Flujo, catalogo, flujos, validar_condicion
 from relevo.clientes_claude import AgenteNoDisponible
 from relevo.diff_reglas import diferencias
-from relevo.presentacion import a_json, cuit_con_guiones, fecha, numero, pesos, porcentaje, tipo_resultado
+from relevo.presentacion import a_json, cuit_con_guiones, decimal, fecha, numero, pesos, porcentaje, tipo_resultado
 from relevo.reglas import ReglasInvalidas
 from relevo.repositorio import EvaluacionGuardada, Repositorio, SolicitudInexistente
 from relevo.servicio import EXTENSIONES_DOCUMENTO, SEGMENTOS, Servicio, SolicitudInvalida
 from relevo.versiones_reglas import ConflictoDeVersion
 
 POR_PAGINA = 20  # solicitudes que muestra el histórico de entrada
+TURNOS_CARTERA = 20  # los últimos que se le pasan al agente de cartera
 PLANTILLAS = Jinja2Templates(directory=Path(__file__).parent / "plantillas")
 
 
@@ -36,6 +38,7 @@ PLANTILLAS.env.filters.update(
     pesos=pesos,
     porcentaje=porcentaje,
     numero=numero,
+    decimal=decimal,
     fecha=fecha,
     tipo_resultado=tipo_resultado,
     a_json=a_json,
@@ -214,6 +217,31 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
         except ValueError as error:
             raise HTTPException(400, str(error)) from None
         return RedirectResponse(f"/solicitudes/{id}", status_code=303)
+
+    # --- monitoreo de cartera ------------------------------------------------
+
+    @router.get("/monitoreo", response_class=HTMLResponse)
+    def ver_monitoreo(request: Request):
+        try:
+            informe, error = servicio.monitoreo(), None
+        except CarteraInvalida as e:
+            informe, error = None, str(e)
+        return pagina(request, "monitoreo.html", informe=informe, error=error)
+
+    @router.post("/monitoreo/preguntar")
+    def preguntar_cartera(cuerpo: Annotated[dict[str, Any], Body()]):
+        historial = [
+            (str(t.get("rol")), str(t.get("texto", "")))
+            for t in cuerpo.get("historial") or []
+            if isinstance(t, dict) and t.get("rol") in ("analista", "agente")
+        ][-TURNOS_CARTERA:]
+        try:
+            respuesta = servicio.preguntar_cartera(historial, str(cuerpo.get("pregunta", "")))
+        except SolicitudInvalida as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        except (AgenteNoDisponible, CarteraInvalida) as error:
+            return JSONResponse({"error": f"No se pudo responder: {error}"}, status_code=503)
+        return {"respuesta": respuesta}
 
     # --- reglas: editor por flujo (ADR 0007) -----------------------------
 

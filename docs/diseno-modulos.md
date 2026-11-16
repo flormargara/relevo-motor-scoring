@@ -117,7 +117,7 @@ RegistroCartera(solicitud_id, convertida, desembolso: Desembolso | None, estados
 EstadoMensual(periodo, saldo, pagado, dias_mora)
 ```
 
-La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008): Relevo los lee en su origen, nunca los guarda, y los enlaza con sus evaluaciones por el id de solicitud. Lo van a usar el chat (monitoreo y simulador) y el flujo de comportamiento. `RegistroCartera.en_default()` usa la misma definición que el scorecard: 90 días de mora dentro de los primeros 12 meses.
+La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008): Relevo los lee en su origen, nunca los guarda, y los enlaza con sus evaluaciones por el id de solicitud. Lo usa el monitoreo (`monitoreo.py`, parte del chat: PD esperada contra default observado y mora temprana) y lo van a usar el simulador y el flujo de comportamiento. `RegistroCartera.en_default()` usa la misma definición que el scorecard: 90 días de mora dentro de los primeros 12 meses.
 
 **Adapters:** `CarteraEnArchivos` (tres CSV: `conversiones`, `desembolsos`, `estados`; la entidad declara cómo se llama su columna del id de solicitud) y `CarteraEnMemoria` para tests. Los de base SQL y API se agregan cuando haya una entidad que los pida. Una solicitud de la que la entidad no informó nada no aparece, que no es lo mismo que una oferta no convertida.
 

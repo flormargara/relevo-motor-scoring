@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% set seccion = "monitoreo" %}
+{% block titulo %}Monitoreo{% endblock %}
+{% set ESTADOS = {
+  "verde": ("en línea", "ok"),
+  "amarillo": ("desvío", "deriva"),
+  "rojo": ("subestima", "rechaza"),
+  "sobreestima": ("sobreestima", ""),
+  "pocos-datos": ("pocos datos", ""),
+} %}
+{% set NOMBRES = {"pyme": "PyME", "monotributista": "Monotributista"} %}
+{% macro estado(g) %}{% set e = ESTADOS[g.estado] %}<span class="chip {{ e[1] }}">{{ e[0] }}</span>{% endmacro %}
+{% macro oe(g) %}{% if g.ratio is not none %}<strong>{{ g.ratio | decimal }}</strong><div class="suave" style="font-size: 12px;">{{ g.ic[0] | decimal }}–{{ g.ic[1] | decimal }}</div>{% else %}—{% endif %}{% endmacro %}
+{% macro tabla(grupos, titulo_clave) %}
+  <table>
+    <thead><tr>
+      <th>{{ titulo_clave }}</th><th class="num">Créditos</th><th class="num">Meses obs.</th><th class="num">PD 12 m</th>
+      <th class="num">Esperados</th><th class="num">Observados</th><th class="num">O/E (IC 95%)</th><th class="num">Mora temprana</th><th>Estado</th>
+    </tr></thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr>
+        <td><strong>{{ NOMBRES.get(g.clave, g.clave) }}</strong></td>
+        <td class="num">{{ g.creditos | numero }}</td>
+        {% if g.creditos %}
+        <td class="num">{{ g.meses_promedio | decimal(1) }}</td>
+        <td class="num">{{ g.pd_12m | porcentaje(1) }}</td>
+        <td class="num">{{ g.esperados | decimal(1) }}</td>
+        <td class="num">{{ g.observados | numero }}</td>
+        {% else %}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>{% endif %}
+        <td class="num">{{ oe(g) }}</td>
+        <td class="num">{{ g.tasa_mora_temprana | porcentaje(1) }}</td>
+        <td>{{ estado(g) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+{% block contenido %}
+<h1>Monitoreo de cartera</h1>
+<p class="sub">Default observado contra la PD del scorecard, con la cartera que informa la entidad{% if informe and informe.corte %} hasta {{ informe.corte.strftime("%m/%Y") }}{% endif %}.</p>
+
+{% if error %}
+<div class="aviso">No se pudo leer la cartera: {{ error }}. Indicá el directorio con <code>RELEVO_CARTERA</code>, o generá una cartera sintética con <code>python -m relevo.sintetico_cartera</code>.</div>
+{% else %}
+{% set e = informe.embudo %}
+<section class="tarjeta">
+  <div class="ficha" style="margin: 0;">
+    <dl>
+      <div><dt>Otorgadas</dt><dd>{{ e.otorgadas | numero }}</dd></div>
+      <div><dt>Convertidas</dt><dd>{{ e.convertidas | numero }} <span class="nota">{{ (e.convertidas / e.otorgadas if e.otorgadas else none) | porcentaje(1) }} de las otorgadas</span></dd></div>
+      <div><dt>Desembolsadas</dt><dd>{{ e.desembolsadas | numero }} <span class="nota">{{ informe.total.creditos | numero }} con 3 meses o más</span></dd></div>
+      <div><dt>Default esperado / observado</dt><dd>{{ informe.total.esperados | decimal(1) }} / {{ informe.total.observados | numero }}</dd></div>
+      <div><dt>O/E de la cartera</dt><dd>{{ informe.total.ratio | decimal }} {{ estado(informe.total) }} <span class="nota">IC 95% {% if informe.total.ic %}{{ informe.total.ic[0] | decimal }}–{{ informe.total.ic[1] | decimal }}{% else %}—{% endif %}</span></dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="tarjeta" id="alertas">
+  <h2>Alertas</h2>
+  {% for a in informe.alertas %}
+    <div class="{{ 'error' if a.nivel == 'rojo' else 'aviso' }}" style="margin-bottom: 8px;">{{ a.texto }}</div>
+  {% else %}
+    <p class="suave">Sin alertas: el default observado acompaña a la PD del scorecard.</p>
+  {% endfor %}
+</section>
+
+<section class="tarjeta" id="chat">
+  <h2>Preguntas al agente</h2>
+  <div id="mensajes"><p class="suave" id="vacio">Preguntale al agente por la cartera: qué rating se desvía, desde qué cohorte, qué conviene revisar. Usa solo los números de esta pantalla, y la conversación no se guarda.</p></div>
+  <form id="preguntar" style="margin-top: 12px;">
+    <textarea name="pregunta" rows="2" required placeholder="¿Qué rating está peor calibrado?"></textarea>
+    <div class="acciones" style="margin-top: 8px;"><button class="primario">Preguntar</button><button type="button" id="limpiar">Limpiar conversación</button></div>
+  </form>
+</section>
+
+<section class="tarjeta">
+  <h2>Por rating</h2>
+  {{ tabla(informe.por_rating, "Rating") }}
+</section>
+
+<section class="tarjeta">
+  <h2>Por cohorte de desembolso</h2>
+  {{ tabla(informe.por_cohorte, "Cohorte") }}
+  {% if informe.por_rating_cohorte %}
+  {% set cohortes = informe.por_cohorte | map(attribute="clave") | list %}
+  <details style="margin-top: 12px;">
+    <summary>Mora temprana por rating y cohorte</summary>
+    <table style="margin-top: 8px;">
+      <thead><tr><th>Cohorte</th>{% for r in informe.por_rating_cohorte %}<th class="num">{{ r }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for c in cohortes %}
+        <tr><td>{{ c }}</td>
+        {% for r, grupos in informe.por_rating_cohorte.items() %}
+          {% set g = (grupos | selectattr("clave", "equalto", c) | list | first) if grupos | selectattr("clave", "equalto", c) | list else none %}
+          <td class="num">{% if g and g.mora_temprana_base %}{{ g.tasa_mora_temprana | porcentaje(1) }} <span class="suave" style="font-size: 12px;">({{ g.mora_temprana_base }})</span>{% else %}—{% endif %}</td>
+        {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>Por segmento y versión de reglas</h2>
+  {{ tabla(informe.por_segmento, "Segmento") }}
+  <div style="margin-top: 12px;">{{ tabla(informe.por_version, "Reglas") }}</div>
+</section>
+
+<section class="tarjeta suave" style="font-size: 13px;">
+  <h2>Cómo se calcula</h2>
+  <p><strong>Esperados</strong>: la PD del scorecard es a 12 meses, y cada crédito aporta la parte que le toca por los meses que lleva observados, suponiendo hazard constante: 1 − (1 − PD)<sup>meses/12</sup>. <strong>Observados</strong>: créditos con 90 días de mora o más en sus primeros 12 meses. Los créditos con menos de 3 meses no entran, porque todavía no pueden llegar a 90 días.</p>
+  <p><strong>O/E</strong> mayor que 1 quiere decir que el scorecard subestima el riesgo. Es <em>desvío</em> desde 1,2 y <em>subestima</em> desde 1,5, solo si el piso del intervalo supera 1; con menos de 30 créditos no se opina. <strong>Mora temprana</strong>: créditos con 30 días o más de mora en los primeros 3 meses; anticipa el deterioro de las cohortes que todavía no maduraron.</p>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const form = document.getElementById("preguntar");
+    if (!form) return;
+    const lista = document.getElementById("mensajes");
+    const vacio = document.getElementById("vacio");
+    const CLAVE = "relevo-chat-cartera";
+    let historial = [];
+    try { historial = JSON.parse(sessionStorage.getItem(CLAVE) || "[]"); } catch { historial = []; }
+
+    const guardar = () => { try { sessionStorage.setItem(CLAVE, JSON.stringify(historial)); } catch {} };
+    const mostrar = (rol, texto, clase = rol) => {
+      vacio.hidden = true;
+      const div = document.createElement("div");
+      div.className = `mensaje ${clase}`;
+      const quien = document.createElement("div");
+      quien.className = "suave";
+      quien.textContent = rol === "analista" ? "Analista" : "Agente";
+      div.append(quien, document.createTextNode(texto));
+      lista.append(div);
+      return div;
+    };
+    historial.forEach((t) => mostrar(t.rol, t.texto));
+
+    form.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      const campo = form.elements.pregunta;
+      const pregunta = campo.value.trim();
+      if (!pregunta) return;
+      const boton = form.querySelector("button.primario");
+      boton.disabled = true; boton.textContent = "Pensando…";
+      mostrar("analista", pregunta);
+      try {
+        const r = await fetch("/monitoreo/preguntar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pregunta, historial }),
+        });
+        const datos = await r.json();
+        if (!r.ok) throw new Error(datos.error || "no se pudo responder");
+        mostrar("agente", datos.respuesta);
+        historial.push({ rol: "analista", texto: pregunta }, { rol: "agente", texto: datos.respuesta });
+        guardar();
+        campo.value = "";
+      } catch (error) {
+        mostrar("agente", error.message, "agente aviso");
+      } finally {
+        boton.disabled = false; boton.textContent = "Preguntar";
+      }
+    });
+
+    document.getElementById("limpiar").addEventListener("click", () => {
+      historial = []; guardar();
+      lista.querySelectorAll(".mensaje").forEach((m) => m.remove());
+      vacio.hidden = false;
+    });
+  })();
+</script>
+{% endblock %}

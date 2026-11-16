@@ -34,6 +34,10 @@ def porcentaje(valor: Any, decimales: int = 2) -> str:
     return "—" if valor is None else f"{_miles(float(valor) * 100, decimales)} %"
 
 
+def decimal(valor: Any, decimales: int = 2) -> str:
+    return "—" if valor is None else _miles(float(valor), decimales)
+
+
 def numero(valor: Any) -> str:
     if isinstance(valor, bool) or valor is None:
         return {True: "sí", False: "no", None: "—"}[valor]
