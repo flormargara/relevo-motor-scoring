@@ -12,8 +12,15 @@ def nombres(flujo: str) -> set[str]:
 def test_el_catalogo_de_cada_flujo_tiene_solo_las_fuentes_que_consulta():
     pyme, mono = nombres("pyme"), nombres("monotributista")
 
-    assert {"solicitud.monto", "cendeu.peor_situacion_12m", "igj.antiguedad_anios", "igj.sin_antecedentes",
-            "documentos.ventas_anuales", "documentos.confianza_minima", "badlar.tasa"} <= pyme
+    assert {
+        "solicitud.monto",
+        "cendeu.peor_situacion_12m",
+        "igj.antiguedad_anios",
+        "igj.sin_antecedentes",
+        "documentos.ventas_anuales",
+        "documentos.confianza_minima",
+        "badlar.tasa",
+    } <= pyme
     assert {"identidad.edad", "documentos.antiguedad_actividad_anios", "arca.categoria_monotributo"} <= mono
     assert not any(n.startswith("identidad.") for n in pyme)
     assert not any(n.startswith("igj.") for n in mono)

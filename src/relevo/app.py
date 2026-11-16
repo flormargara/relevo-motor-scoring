@@ -305,7 +305,10 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
         _flujo(flujo)
         try:
             reglas = servicio.versiones.publicar(
-                flujo, _contenido(cuerpo), str(cuerpo.get("autor", "")), str(cuerpo.get("motivo", "")),
+                flujo,
+                _contenido(cuerpo),
+                str(cuerpo.get("autor", "")),
+                str(cuerpo.get("motivo", "")),
                 base=int(cuerpo["base"]),
             )
         except ConflictoDeVersion as error:
