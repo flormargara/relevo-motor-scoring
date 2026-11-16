@@ -1,41 +1,7 @@
 {% extends "base.html" %}
 {% set seccion = "monitoreo" %}
 {% block titulo %}Monitoreo{% endblock %}
-{% set ESTADOS = {
-  "verde": ("en línea", "ok"),
-  "amarillo": ("desvío", "deriva"),
-  "rojo": ("subestima", "rechaza"),
-  "sobreestima": ("sobreestima", ""),
-  "pocos-datos": ("pocos datos", ""),
-} %}
-{% set NOMBRES = {"pyme": "PyME", "monotributista": "Monotributista"} %}
-{% macro estado(g) %}{% set e = ESTADOS[g.estado] %}<span class="chip {{ e[1] }}">{{ e[0] }}</span>{% endmacro %}
-{% macro oe(g) %}{% if g.ratio is not none %}<strong>{{ g.ratio | decimal }}</strong><div class="suave" style="font-size: 12px;">{{ g.ic[0] | decimal }}–{{ g.ic[1] | decimal }}</div>{% else %}—{% endif %}{% endmacro %}
-{% macro tabla(grupos, titulo_clave) %}
-  <table>
-    <thead><tr>
-      <th>{{ titulo_clave }}</th><th class="num">Créditos</th><th class="num">Meses obs.</th><th class="num">PD 12 m</th>
-      <th class="num">Esperados</th><th class="num">Observados</th><th class="num">O/E (IC 95%)</th><th class="num">Mora temprana</th><th>Estado</th>
-    </tr></thead>
-    <tbody>
-    {% for g in grupos %}
-      <tr>
-        <td><strong>{{ NOMBRES.get(g.clave, g.clave) }}</strong></td>
-        <td class="num">{{ g.creditos | numero }}</td>
-        {% if g.creditos %}
-        <td class="num">{{ g.meses_promedio | decimal(1) }}</td>
-        <td class="num">{{ g.pd_12m | porcentaje(1) }}</td>
-        <td class="num">{{ g.esperados | decimal(1) }}</td>
-        <td class="num">{{ g.observados | numero }}</td>
-        {% else %}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>{% endif %}
-        <td class="num">{{ oe(g) }}</td>
-        <td class="num">{{ g.tasa_mora_temprana | porcentaje(1) }}</td>
-        <td>{{ estado(g) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-{% endmacro %}
+{% from "_macros.html" import tabla, estado %}
 {% block contenido %}
 <h1>Monitoreo de cartera</h1>
 <p class="sub">Default observado contra la PD del scorecard, con la cartera que informa la entidad{% if informe and informe.corte %} hasta {{ informe.corte.strftime("%m/%Y") }}{% endif %}.</p>
@@ -59,19 +25,13 @@
 <section class="tarjeta" id="alertas">
   <h2>Alertas</h2>
   {% for a in informe.alertas %}
-    <div class="{{ 'error' if a.nivel == 'rojo' else 'aviso' }}" style="margin-bottom: 8px;">{{ a.texto }}</div>
+    <div class="{{ 'error' if a.nivel == 'rojo' else 'aviso' }}" style="margin-bottom: 8px; display: flex; gap: 12px; justify-content: space-between; align-items: baseline;">
+      <span>{{ a.texto }}</span>
+      <a href="/chat?{{ {'pregunta': 'Explicame esta alerta y qué conviene revisar o simular: ' ~ a.texto} | urlencode }}" style="white-space: nowrap; font-size: 13px;">Preguntar en el chat</a>
+    </div>
   {% else %}
     <p class="suave">Sin alertas: el default observado acompaña a la PD del scorecard.</p>
   {% endfor %}
-</section>
-
-<section class="tarjeta" id="chat">
-  <h2>Preguntas al agente</h2>
-  <div id="mensajes"><p class="suave" id="vacio">Preguntale al agente por la cartera: qué rating se desvía, desde qué cohorte, qué conviene revisar. Usa solo los números de esta pantalla, y la conversación no se guarda.</p></div>
-  <form id="preguntar" style="margin-top: 12px;">
-    <textarea name="pregunta" rows="2" required placeholder="¿Qué rating está peor calibrado?"></textarea>
-    <div class="acciones" style="margin-top: 8px;"><button class="primario">Preguntar</button><button type="button" id="limpiar">Limpiar conversación</button></div>
-  </form>
 </section>
 
 <section class="tarjeta">
@@ -115,65 +75,4 @@
   <p><strong>O/E</strong> mayor que 1 quiere decir que el scorecard subestima el riesgo. Es <em>desvío</em> desde 1,2 y <em>subestima</em> desde 1,5, solo si el piso del intervalo supera 1; con menos de 30 créditos no se opina. <strong>Mora temprana</strong>: créditos con 30 días o más de mora en los primeros 3 meses; anticipa el deterioro de las cohortes que todavía no maduraron.</p>
 </section>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-  (() => {
-    const form = document.getElementById("preguntar");
-    if (!form) return;
-    const lista = document.getElementById("mensajes");
-    const vacio = document.getElementById("vacio");
-    const CLAVE = "relevo-chat-cartera";
-    let historial = [];
-    try { historial = JSON.parse(sessionStorage.getItem(CLAVE) || "[]"); } catch { historial = []; }
-
-    const guardar = () => { try { sessionStorage.setItem(CLAVE, JSON.stringify(historial)); } catch {} };
-    const mostrar = (rol, texto, clase = rol) => {
-      vacio.hidden = true;
-      const div = document.createElement("div");
-      div.className = `mensaje ${clase}`;
-      const quien = document.createElement("div");
-      quien.className = "suave";
-      quien.textContent = rol === "analista" ? "Analista" : "Agente";
-      div.append(quien, document.createTextNode(texto));
-      lista.append(div);
-      return div;
-    };
-    historial.forEach((t) => mostrar(t.rol, t.texto));
-
-    form.addEventListener("submit", async (evento) => {
-      evento.preventDefault();
-      const campo = form.elements.pregunta;
-      const pregunta = campo.value.trim();
-      if (!pregunta) return;
-      const boton = form.querySelector("button.primario");
-      boton.disabled = true; boton.textContent = "Pensando…";
-      mostrar("analista", pregunta);
-      try {
-        const r = await fetch("/monitoreo/preguntar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pregunta, historial }),
-        });
-        const datos = await r.json();
-        if (!r.ok) throw new Error(datos.error || "no se pudo responder");
-        mostrar("agente", datos.respuesta);
-        historial.push({ rol: "analista", texto: pregunta }, { rol: "agente", texto: datos.respuesta });
-        guardar();
-        campo.value = "";
-      } catch (error) {
-        mostrar("agente", error.message, "agente aviso");
-      } finally {
-        boton.disabled = false; boton.textContent = "Preguntar";
-      }
-    });
-
-    document.getElementById("limpiar").addEventListener("click", () => {
-      historial = []; guardar();
-      lista.querySelectorAll(".mensaje").forEach((m) => m.remove());
-      vacio.hidden = false;
-    });
-  })();
-</script>
 {% endblock %}

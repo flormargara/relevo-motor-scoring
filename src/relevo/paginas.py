@@ -1,9 +1,9 @@
-"""Las pantallas: Histórico, Nueva solicitud, Caso, Monitoreo y Backoffice (el editor de reglas), con Jinja.
+"""Las pantallas: Histórico, Nueva solicitud, Caso, Monitoreo, Chat with your data y Backoffice, con Jinja.
 
 Son delgadas a propósito: arman la solicitud, llaman al servicio (que llama a ``evaluar``),
 guardan y muestran. Quedan fuera del esquema OpenAPI: el contrato del motor es ``api``.
-Los endpoints JSON del editor de reglas (validar, borrador, publicar) y el de preguntas
-de Monitoreo son internos de sus pantallas, no parte de ese contrato.
+Los endpoints JSON del editor de reglas (validar, borrador, publicar) y los de Chat with
+your data (preguntar, guardar borrador) son internos de sus pantallas, no parte de ese contrato.
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ from relevo.diff_reglas import diferencias
 from relevo.presentacion import a_json, cuit_con_guiones, decimal, fecha, numero, pesos, porcentaje, tipo_resultado
 from relevo.reglas import ReglasInvalidas
 from relevo.repositorio import EvaluacionGuardada, Repositorio, SolicitudInexistente
-from relevo.servicio import EXTENSIONES_DOCUMENTO, SEGMENTOS, Servicio, SolicitudInvalida
+from relevo.servicio import EXTENSIONES_DOCUMENTO, SEGMENTOS, BorradorExistente, Servicio, SolicitudInvalida
 from relevo.versiones_reglas import ConflictoDeVersion
 
 POR_PAGINA = 20  # solicitudes que muestra el histórico de entrada
-TURNOS_CARTERA = 20  # los últimos que se le pasan al agente de cartera
+TURNOS_CHAT = 20  # los últimos que se le pasan al agente de Chat with your data
 PLANTILLAS = Jinja2Templates(directory=Path(__file__).parent / "plantillas")
 
 
@@ -228,20 +228,50 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
             informe, error = None, str(e)
         return pagina(request, "monitoreo.html", informe=informe, error=error)
 
-    @router.post("/monitoreo/preguntar")
-    def preguntar_cartera(cuerpo: Annotated[dict[str, Any], Body()]):
+    # --- Chat with your data ------------------------------------------------
+
+    @router.get("/chat", response_class=HTMLResponse)
+    def ver_chat(request: Request, pregunta: str = ""):
+        return pagina(request, "chat.html", pregunta=pregunta, flujos=servicio.flujos())
+
+    @router.post("/chat/preguntar")
+    def preguntar_datos(cuerpo: Annotated[dict[str, Any], Body()]):
         historial = [
-            (str(t.get("rol")), str(t.get("texto", "")))
+            {"rol": t["rol"], "texto": str(t.get("texto", "")), "plan": t.get("plan")}
             for t in cuerpo.get("historial") or []
             if isinstance(t, dict) and t.get("rol") in ("analista", "agente")
-        ][-TURNOS_CARTERA:]
+        ][-TURNOS_CHAT:]
         try:
-            respuesta = servicio.preguntar_cartera(historial, str(cuerpo.get("pregunta", "")))
+            respuesta = servicio.preguntar_datos(historial, str(cuerpo.get("pregunta", "")))
         except SolicitudInvalida as error:
             return JSONResponse({"error": str(error)}, status_code=400)
-        except (AgenteNoDisponible, CarteraInvalida) as error:
+        except AgenteNoDisponible as error:
             return JSONResponse({"error": f"No se pudo responder: {error}"}, status_code=503)
-        return {"respuesta": respuesta}
+        plan = respuesta.plan
+        tabla = PLANTILLAS.env.get_template("_resultado.html").render(
+            analisis=plan.analisis, resultado=respuesta.resultado, error=respuesta.error, flujos=servicio.flujos()
+        )
+        simulable = plan.analisis == "simulacion" and plan.origen == "cambios" and respuesta.resultado is not None
+        return {
+            "respuesta": respuesta.texto,
+            "plan": plan.a_dict(),
+            "tabla": tabla,
+            "borrador": {"flujo": plan.flujo, "cambios": list(plan.cambios)} if simulable else None,
+        }
+
+    @router.post("/chat/borrador")
+    def guardar_borrador_simulado(cuerpo: Annotated[dict[str, Any], Body()]):
+        flujo = _flujo(str(cuerpo.get("flujo", ""))).id
+        cambios = cuerpo.get("cambios")
+        if not isinstance(cambios, list) or not cambios:
+            return JSONResponse({"error": "no hay cambios para guardar"}, status_code=400)
+        try:
+            servicio.guardar_borrador_simulado(flujo, cambios, reemplazar=bool(cuerpo.get("reemplazar")))
+        except BorradorExistente as error:
+            return JSONResponse({"error": str(error), "existe": True}, status_code=409)
+        except (ReglasInvalidas, ValueError) as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        return {"url": f"/reglas?flujo={flujo}"}
 
     # --- reglas: editor por flujo (ADR 0007) -----------------------------
 

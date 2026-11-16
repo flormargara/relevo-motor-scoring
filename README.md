@@ -49,7 +49,7 @@ Las solicitudes de la API aparecen en el Histórico como las demás. **No tiene 
 
 ## Agentes
 
-Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo, responden preguntas en la pantalla del caso y sobre la cartera en **Monitoreo**. Nunca deciden: si fallan, el veredicto sale igual.
+Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo, responden preguntas en la pantalla del caso y sobre toda la base en **Chat with your data**. Nunca deciden: si fallan, el veredicto sale igual.
 
 Por defecto usan `claude -p` (Claude Code con tu suscripción; hace falta haber iniciado sesión con `claude`). Para usar la API de Anthropic:
 
@@ -147,7 +147,29 @@ La pestaña **Monitoreo** cruza las solicitudes otorgadas con la cartera (`RELEV
 - **Estado**: *desvío* si O/E > 1,2 y *subestima* si O/E > 1,5, solo cuando el piso del intervalo de Poisson al 95% supera 1; con menos de 30 créditos, *pocos datos*.
 - **Mora temprana**: 30+ días en los primeros 3 meses. Alerta si alguna de las 3 últimas cohortes de un rating la tiene 1,5 veces mayor que las anteriores (test de dos proporciones).
 
-Los números se calculan sin agente. El chat de la pantalla se los pasa al agente de cartera, que los explica pero no hace cuentas; la conversación no se guarda.
+Los números se calculan sin agente. Cada alerta tiene un enlace para preguntarla en **Chat with your data**.
+
+## Chat with your data
+
+La pestaña **Chat with your data** contesta preguntas sobre las evaluaciones, la cartera y las políticas (`relevo/chat_datos.py`). El agente nunca hace cuentas. Cada pregunta pasa por tres pasos:
+
+1. **Interpretar.** El agente traduce la pregunta a un pedido de un catálogo cerrado: `monitoreo`, `evaluaciones` o `simulacion`. Si no entra en ninguno, lo dice.
+2. **Ejecutar.** El código valida el pedido y corre el análisis. Si el pedido falla (un cambio que no se puede aplicar, una variable fuera del catálogo), le pide al agente que lo corrija una vez.
+3. **Explicar.** El agente explica el resultado. Las tablas se dibujan desde los datos, no desde su texto.
+
+**Simulador** (`relevo/simulador.py`). Vuelve a correr el motor sobre la última evaluación de cada solicitud del flujo, con las reglas vigentes y con las candidatas:
+
+- **Solo lectura.** Usa los snapshots guardados: no consulta fuentes, así que no tiene costo, y no escribe nada.
+- **Fuentes faltantes.** Si una regla candidata necesita una fuente que en su momento no se consultó, la solicitud queda fuera de la comparación y se informa.
+- **De dónde salen las candidatas.** Son cambios del agente a una copia de las vigentes (`aplicar_cambios`), el borrador del editor o una versión publicada.
+- **Qué compara.**
+  - Aprobación y monto.
+  - PD del scorecard y PD corregida por el O/E de cada rating.
+  - El default real de los que salen.
+  - La PD estimada de los que entran, que nunca tuvieron crédito.
+- **Guardar como borrador.** Lleva los cambios simulados al editor de Backoffice. Publicarlos sigue siendo una acción del analista.
+
+La conversación no se guarda: vive en la pestaña del navegador.
 
 ## Demo con datos reales
 

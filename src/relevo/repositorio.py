@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     nota TEXT
 );
 CREATE INDEX IF NOT EXISTS snapshots_por_fuente ON snapshots (fuente, solicitud_id, consultado_en);
+CREATE INDEX IF NOT EXISTS snapshots_por_evaluacion ON snapshots (evaluacion_id, orden);
 
 CREATE TABLE IF NOT EXISTS documentos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -485,6 +486,18 @@ class Repositorio:
             )
             for f in filas
         ]
+
+    def ultimas_evaluaciones(self, segmento: str | None = None) -> list[EvaluacionGuardada]:
+        """La última evaluación de cada solicitud (de un segmento, si se pide), con sus snapshots."""
+        filtro, parametros = ("WHERE s.segmento = ?", (segmento,)) if segmento else ("", ())
+        filas = self._ejecutar(
+            f"""
+            SELECT (SELECT MAX(id) FROM evaluaciones WHERE solicitud_id = s.id) AS id
+            FROM solicitudes s {filtro} ORDER BY s.id
+            """,
+            parametros,
+        ).fetchall()
+        return [self.evaluacion(f["id"]) for f in filas if f["id"] is not None]
 
     def ultima_evaluacion(self, solicitud_id: str) -> EvaluacionGuardada | None:
         sql = "SELECT MAX(id) AS id FROM evaluaciones WHERE solicitud_id = ?"

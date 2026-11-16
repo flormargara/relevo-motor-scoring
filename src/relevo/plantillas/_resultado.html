@@ -1,0 +1,88 @@
+{# El resultado de un análisis de Chat with your data, dibujado desde los datos (no desde el texto del agente). #}
+{% from "_macros.html" import tabla, NOMBRES %}
+{% if error %}
+<div class="aviso" style="margin: 8px 0 0;">El análisis no se pudo correr: {{ error }}</div>
+{% elif analisis == "monitoreo" and resultado %}
+<details class="resultado" open>
+  <summary>Monitoreo · cartera hasta {{ resultado.corte.strftime("%m/%Y") if resultado.corte else "—" }}</summary>
+  {{ tabla(resultado.por_rating, "Rating") }}
+  {% if resultado.alertas %}<p class="suave" style="margin: 8px 0 0; font-size: 13px;">{{ resultado.alertas | length }} alertas. El detalle está en <a href="/monitoreo">Monitoreo</a>.</p>{% endif %}
+</details>
+{% elif analisis == "evaluaciones" and resultado %}
+<details class="resultado" open>
+  <summary>Evaluaciones · última de cada solicitud</summary>
+  <table>
+    <thead><tr><th>Segmento</th><th class="num">Solicitudes</th><th class="num">Aprobadas</th><th class="num">Derivadas</th><th class="num">Rechazadas</th><th class="num">Tasa de aprobación</th><th>Motivos más frecuentes</th></tr></thead>
+    <tbody>
+    {% for segmento, r in resultado.items() %}
+      <tr>
+        <td><strong>{{ NOMBRES.get(segmento, segmento) }}</strong></td>
+        <td class="num">{{ r.solicitudes | numero }}</td>
+        <td class="num">{{ r.por_veredicto.get("APROBADO", 0) | numero }}</td>
+        <td class="num">{{ r.por_veredicto.get("DERIVAR", 0) | numero }}</td>
+        <td class="num">{{ r.por_veredicto.get("RECHAZADO", 0) | numero }}</td>
+        <td class="num">{{ r.tasa_aprobacion | porcentaje(1) }}</td>
+        <td class="suave" style="font-size: 13px;">{% for motivo, n in r.motivos_mas_frecuentes.items() %}{% if loop.index <= 3 %}{{ motivo | replace("_", " ") }} ({{ n | numero }}){{ ", " if not loop.last and loop.index < 3 }}{% endif %}{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% elif analisis == "simulacion" and resultado %}
+{% set v = resultado.vigente %}{% set c = resultado.candidata %}
+<details class="resultado" open>
+  <summary>Simulación · {{ flujos.get(resultado.flujo, resultado.flujo) }} · {{ v.reglas }} contra la candidata</summary>
+  <h3>Cambios</h3>
+  <ul style="margin: 0; padding-left: 20px; font-size: 13px;">
+  {% for cambio in resultado.cambios %}
+    <li>{{ cambio.que }}{% if cambio.antes or cambio.despues %}: <span class="suave">{{ cambio.antes or "—" }}</span> → <strong>{{ cambio.despues or "—" }}</strong>{% endif %}</li>
+  {% endfor %}
+  </ul>
+  <h3>Resultado</h3>
+  <table>
+    <thead><tr><th></th><th class="num">Vigente</th><th class="num">Candidata</th></tr></thead>
+    <tbody>
+      <tr><td>Solicitudes evaluadas</td><td class="num">{{ v.evaluadas | numero }}</td><td class="num">{{ c.evaluadas | numero }}</td></tr>
+      <tr><td>Aprobadas</td><td class="num">{{ v.aprobadas | numero }}</td><td class="num"><strong>{{ c.aprobadas | numero }}</strong></td></tr>
+      <tr><td>Tasa de aprobación</td><td class="num">{{ v.tasa_aprobacion | porcentaje(1) }}</td><td class="num"><strong>{{ c.tasa_aprobacion | porcentaje(1) }}</strong></td></tr>
+      <tr><td>Derivadas / rechazadas</td><td class="num">{{ v.derivadas | numero }} / {{ v.rechazadas | numero }}</td><td class="num">{{ c.derivadas | numero }} / {{ c.rechazadas | numero }}</td></tr>
+      <tr><td>Monto ofrecido</td><td class="num">{{ v.monto | pesos }}</td><td class="num">{{ c.monto | pesos }}</td></tr>
+      <tr><td>PD 12 m promedio (scorecard)</td><td class="num">{{ v.pd_promedio | porcentaje(1) }}</td><td class="num">{{ c.pd_promedio | porcentaje(1) }}</td></tr>
+      <tr><td>PD 12 m corregida por O/E <span class="chip">estimada</span></td><td class="num">{{ v.pd_corregida_promedio | porcentaje(1) }}</td><td class="num"><strong>{{ c.pd_corregida_promedio | porcentaje(1) }}</strong></td></tr>
+      <tr><td>Aprobadas por rating</td>
+        <td class="num">{% for r, n in v.aprobadas_por_rating.items() %}{{ r }} {{ n | numero }}{{ " · " if not loop.last }}{% endfor %}</td>
+        <td class="num">{% for r, n in c.aprobadas_por_rating.items() %}{{ r }} {{ n | numero }}{{ " · " if not loop.last }}{% endfor %}</td></tr>
+    </tbody>
+  </table>
+  <h3>Qué cambia</h3>
+  <table>
+    <thead><tr><th></th><th class="num">Solicitudes</th><th class="num">PD scorecard</th><th class="num">PD corregida</th><th>Default real</th></tr></thead>
+    <tbody>
+    {% for nombre, m, nota in (("Salen (aprobadas hoy, no con la candidata)", resultado.salen, "observado"), ("Entran (no aprobadas hoy, sí con la candidata)", resultado.entran, "sin crédito: solo estimado")) %}
+      <tr>
+        <td>{{ nombre }}</td>
+        <td class="num">{{ m.solicitudes | numero }}</td>
+        <td class="num">{{ m.pd_promedio | porcentaje(1) }}</td>
+        <td class="num">{{ m.pd_corregida_promedio | porcentaje(1) }}</td>
+        <td class="suave" style="font-size: 13px;">{% if m.con_credito %}{{ m.con_credito.observados | numero }} defaults en {{ m.con_credito.creditos | numero }} créditos (esperados {{ m.con_credito.esperados | decimal(1) }}){% elif m.solicitudes %}{{ nota if "Entran" in nombre else "sin créditos con 3 meses o más" }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if resultado.no_evaluables %}
+  <p class="aviso" style="margin: 10px 0 0; font-size: 13px;">Quedaron fuera de la comparación {{ resultado.no_evaluables.values() | sum | numero }} solicitudes que necesitaban una fuente no consultada en su momento: {% for fuente, n in resultado.no_evaluables.items() %}{{ fuente }} ({{ n | numero }}){{ ", " if not loop.last }}{% endfor %}. El simulador no consulta fuentes.</p>
+  {% endif %}
+  {% set matriz = resultado.matriz %}
+  <details style="margin-top: 10px;">
+    <summary>Veredictos: vigente contra candidata</summary>
+    <table style="margin-top: 8px;">
+      <thead><tr><th>Vigente \ Candidata</th>{% for b in ("APROBADO", "DERIVAR", "RECHAZADO") %}<th class="num">{{ b }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for a in ("APROBADO", "DERIVAR", "RECHAZADO") %}
+        <tr><td><span class="chip {{ a }}">{{ a }}</span></td>{% for b in ("APROBADO", "DERIVAR", "RECHAZADO") %}<td class="num">{{ matriz.get((a, b), 0) | numero }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</details>
+{% endif %}

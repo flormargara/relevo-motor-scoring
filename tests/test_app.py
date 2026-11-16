@@ -1,4 +1,4 @@
-"""App web: Histórico, Nueva solicitud, Caso, Monitoreo y Backoffice, con fuentes y agente falsos."""
+"""App web: todas las pantallas, con fuentes y agente falsos."""
 
 import json
 import re
@@ -62,7 +62,7 @@ def test_las_pestanas_separan_alta_historico_y_backoffice(cliente):
     assert 'name="q"' in historico and 'name="cuit"' not in historico
     for pagina in (historico, nueva, http.get("/reglas").text):
         assert ">Nueva solicitud</a>" in pagina and ">Histórico</a>" in pagina and ">Backoffice</a>" in pagina
-        assert ">Monitoreo</a>" in pagina
+        assert ">Monitoreo</a>" in pagina and ">Chat with your data</a>" in pagina
         assert ">Reglas</a>" not in pagina
     assert 'class="activo">Backoffice' in http.get("/reglas").text
 
@@ -461,27 +461,88 @@ def test_monitoreo_muestra_el_desvio_y_la_alerta(cliente):
 
     assert "Por rating" in pagina and "Por cohorte de desembolso" in pagina and "2026-01" in pagina
     assert "El scorecard subestima el riesgo" in pagina and "subestima</span>" in pagina
+    assert "Preguntar en el chat" in pagina and 'id="chat"' not in pagina
 
 
-def test_preguntas_al_agente_de_cartera(cliente):
-    agente = ClaudeFalso("El rating A está subestimado.")
+# --- Chat with your data ----------------------------------------------------------
+
+
+def test_chat_with_your_data_prellena_la_pregunta(cliente):
+    pagina = cliente()[0].get("/chat", params={"pregunta": "¿Qué pasa con el C?"}).text
+
+    assert 'class="activo">Chat with your data' in pagina and "¿Qué pasa con el C?</textarea>" in pagina
+
+
+def test_el_chat_responde_con_el_monitoreo(cliente):
+    agente = ClaudeFalso('{"analisis": "monitoreo"}', "El scorecard subestima el riesgo.")
     http, servicio = cliente(agente=agente)
     _con_cartera(http, servicio, defaults=10)
 
-    historial = [{"rol": "analista", "texto": "Hola"}, {"rol": "agente", "texto": "Hola."}, {"rol": "x", "texto": "no"}]
-    respuesta = http.post("/monitoreo/preguntar", json={"pregunta": "¿Qué rating anda mal?", "historial": historial})
+    historial = [
+        {"rol": "analista", "texto": "Hola"},
+        {"rol": "agente", "texto": "Hola.", "plan": {"analisis": "ninguno"}},
+    ]
+    respuesta = http.post(
+        "/chat/preguntar", json={"pregunta": "¿Cómo viene la cartera?", "historial": historial}
+    ).json()
 
-    assert respuesta.json() == {"respuesta": "El rating A está subestimado."}
-    prompt = agente.pedidos[0]["prompt"]
-    assert "analista: Hola\nagente: Hola." in prompt and "x: no" not in prompt
-    assert '"default_observado":10' in prompt
-    assert http.post("/monitoreo/preguntar", json={"pregunta": "  "}).status_code == 400
+    assert respuesta["respuesta"] == "El scorecard subestima el riesgo."
+    assert respuesta["plan"] == {"analisis": "monitoreo"}
+    assert "Monitoreo · cartera hasta" in respuesta["tabla"] and respuesta["borrador"] is None
+    plan, explicacion = agente.pedidos
+    assert "analista: Hola" in plan["prompt"] and '(pedido: {"analisis": "ninguno"})' in plan["prompt"]
+    assert '"default_observado":10' in explicacion["prompt"]
+    assert http.post("/chat/preguntar", json={"pregunta": " "}).status_code == 400
 
 
-def test_preguntas_de_cartera_sin_agente(cliente):
-    http, servicio = cliente()
-    _con_cartera(http, servicio, defaults=0)
+def test_el_chat_simula_y_guarda_el_borrador(cliente):
+    cambios = [{"op": "poner", "ruta": "politica.rechazar_ratings", "valor": ["A", "B", "C", "D", "E"]}]
+    plan = json.dumps({"analisis": "simulacion", "flujo": "pyme", "origen": "cambios", "cambios": cambios})
+    http, servicio = cliente(agente=ClaudeFalso(f"Este es el pedido:\n{plan}", "No aprobarías a nadie."))
+    alta(http)
 
-    respuesta = http.post("/monitoreo/preguntar", json={"pregunta": "¿Cómo viene?"})
+    respuesta = http.post("/chat/preguntar", json={"pregunta": "¿Y si rechazo todo?"}).json()
+
+    assert "Simulación · PyME · Originación · pyme.v3 contra la candidata" in respuesta["tabla"]
+    assert respuesta["borrador"] == {"flujo": "pyme", "cambios": cambios}
+    assert servicio.versiones.borrador("pyme") is None  # simular no guarda nada
+
+    guardado = http.post("/chat/borrador", json=respuesta["borrador"])
+    assert guardado.json() == {"url": "/reglas?flujo=pyme"}
+    assert servicio.versiones.borrador("pyme").contenido["politica"]["rechazar_ratings"] == ["A", "B", "C", "D", "E"]
+    assert servicio.versiones.reglas("pyme").version == 3  # no se publicó
+
+    otra_vez = http.post("/chat/borrador", json=respuesta["borrador"])
+    assert otra_vez.status_code == 409 and otra_vez.json()["existe"]
+    assert http.post("/chat/borrador", json={**respuesta["borrador"], "reemplazar": True}).status_code == 200
+
+
+def test_el_chat_reintenta_un_cambio_invalido(cliente):
+    malo = json.dumps(
+        {
+            "analisis": "simulacion",
+            "flujo": "pyme",
+            "cambios": [{"op": "quitar_regla", "seccion": "killers", "id": "nada"}],
+        }
+    )
+    bueno = json.dumps(
+        {
+            "analisis": "simulacion",
+            "flujo": "pyme",
+            "cambios": [{"op": "quitar_regla", "seccion": "killers", "id": "lista_negra"}],
+        }
+    )
+    agente = ClaudeFalso(malo, bueno, "Listo.")
+    http, _ = cliente(agente=agente)
+    alta(http)
+
+    respuesta = http.post("/chat/preguntar", json={"pregunta": "¿Y sin lista negra?"}).json()
+
+    assert "no hay una regla 'nada'" in agente.pedidos[1]["prompt"]
+    assert "Killer" in respuesta["tabla"] and "lista_negra" in respuesta["tabla"]
+
+
+def test_el_chat_sin_agente(cliente):
+    respuesta = cliente()[0].post("/chat/preguntar", json={"pregunta": "¿Cómo viene?"})
 
     assert respuesta.status_code == 503 and "no hay agente configurado" in respuesta.json()["error"]
