@@ -128,3 +128,13 @@ Los modelos se entrenan sobre una cartera sintética (ver `src/relevo/sintetico.
 .venv/bin/python -m relevo.sintetico pyme --version 2
 .venv/bin/python -m relevo.sintetico monotributista --version 2
 ```
+
+## Cartera sintética
+
+La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008). Para probar el monitoreo y el simulador se inventan a partir de las solicitudes otorgadas de la base, coherentes con la PD de cada evaluación y con un deterioro plantado en el rating C:
+
+```bash
+.venv/bin/python -m relevo.sintetico_cartera --hasta 2026-11-15
+```
+
+Escribe tres CSV en `data/cartera/` (`conversiones`, `desembolsos`, `estados`), que se leen con `CarteraEnArchivos`, el mismo adapter que usaría una entidad que entrega archivos.
