@@ -33,8 +33,15 @@ def test_reglas_agregadas_quitadas_modificadas_y_reordenadas():
     quitada = Cambio("quitada", "Killer identificacion_rechazada_por_bcra", "cendeu.identificacion_rechazada", None)
     assert quitada in cambios
     assert Cambio("agregada", "Derivación monto_alto", None, "solicitud.monto > 1000") in cambios
-    assert Cambio("modificada", "Killer lista_negra · condición", "propios.lista_negra",
-                  "propios.lista_negra or propios.creditos_previos > 3") in cambios
+    assert (
+        Cambio(
+            "modificada",
+            "Killer lista_negra · condición",
+            "propios.lista_negra",
+            "propios.lista_negra or propios.creditos_previos > 3",
+        )
+        in cambios
+    )
     assert any(c.tipo == "orden" and c.que == "Orden de los killers" for c in cambios)
 
 

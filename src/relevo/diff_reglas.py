@@ -36,8 +36,12 @@ def diferencias(antes: Reglas, despues: Reglas) -> list[Cambio]:
         cambios.append(Cambio("modificada", "Scorecard · modelo", antes.scorecard.modelo, despues.scorecard.modelo))
     if antes.scorecard.si_no_disponible != despues.scorecard.si_no_disponible:
         cambios.append(
-            Cambio("modificada", "Scorecard · si falta un dato", antes.scorecard.si_no_disponible,
-                   despues.scorecard.si_no_disponible)
+            Cambio(
+                "modificada",
+                "Scorecard · si falta un dato",
+                antes.scorecard.si_no_disponible,
+                despues.scorecard.si_no_disponible,
+            )
         )
     for rating in dict.fromkeys(r.nombre for r in (*antes.ratings, *despues.ratings)):
         d0, d1 = _decision(antes, rating), _decision(despues, rating)

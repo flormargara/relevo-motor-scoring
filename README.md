@@ -46,6 +46,14 @@ echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
 .venv/bin/pytest
 ```
 
+Los tests del scorecard (`test_sintetico.py`) se saltean si no está instalado el extra `sintetico` (`pip install -e '.[dev,sintetico]'`).
+
+En GitHub, el workflow de CI (`.github/workflows/ci.yml`) corre `ruff check`, `ruff format --check` y los tests en cada PR y en cada push a `main`. No necesita `data/` ni credenciales. Antes de subir, conviene correr lo mismo localmente:
+
+```bash
+.venv/bin/ruff check src tests && .venv/bin/ruff format --check src tests && .venv/bin/pytest
+```
+
 Las pruebas contra la API real del BCRA son opcionales:
 
 ```bash

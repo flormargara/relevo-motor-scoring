@@ -512,7 +512,12 @@ class Repositorio:
         if fila is None:
             return None
         return VersionReglasGuardada(
-            fila["flujo"], fila["version"], fila["contenido"], fila["autor"], fila["motivo"], fila["base"],
+            fila["flujo"],
+            fila["version"],
+            fila["contenido"],
+            fila["autor"],
+            fila["motivo"],
+            fila["base"],
             datetime.fromisoformat(fila["publicada_en"]),
         )
 

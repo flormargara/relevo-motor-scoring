@@ -63,10 +63,7 @@ class Flujo:
 @cache
 def flujos(archivo: Path = ARCHIVO_FLUJOS) -> dict[str, Flujo]:
     datos = yaml.safe_load(archivo.read_text(encoding="utf-8"))
-    return {
-        id: Flujo(id, d["nombre"], d["segmento"], d["tipo"], tuple(d["fuentes"]))
-        for id, d in datos.items()
-    }
+    return {id: Flujo(id, d["nombre"], d["segmento"], d["tipo"], tuple(d["fuentes"])) for id, d in datos.items()}
 
 
 def flujo_de_originacion(segmento: str) -> Flujo:
