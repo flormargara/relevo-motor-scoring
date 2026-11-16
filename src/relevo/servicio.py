@@ -221,7 +221,12 @@ class Servicio:
         return self.repositorio.guardar_evaluacion(solicitud_id, evaluacion, self.ahora())
 
     def cargar_precargados(self, archivos: Iterable[Path] = CASOS_PRECARGADOS) -> list[str]:
-        """Da de alta los casos precargados que todavía no están. No los evalúa (eso consulta en vivo)."""
+        """Da de alta los casos precargados que todavía no están. No los evalúa (eso consulta en vivo).
+
+        En la base de demo no carga nada: ahí solo van CUIT reservados (ADR 0009) y los casos
+        precargados no lo son."""
+        if self.repositorio.es_base_de_demo():
+            return []
         nuevos = []
         for archivo in archivos:
             if not archivo.is_file():

@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS solicitudes (
     monto REAL NOT NULL,
     plazo_meses INTEGER NOT NULL,
     documentos TEXT,             -- JSON con los campos extraídos, o NULL
-    origen TEXT NOT NULL,        -- precargado | manual | api
+    origen TEXT NOT NULL,        -- precargado | manual | api | demo
     consentimiento INTEGER NOT NULL DEFAULT 0,
     creada_en TEXT NOT NULL,
     fecha_nacimiento TEXT        -- ISO, declarada en el alta, o NULL
@@ -254,6 +254,10 @@ class Repositorio:
 
     def existe_solicitud(self, id: str) -> bool:
         return self._ejecutar("SELECT 1 FROM solicitudes WHERE id = ?", (id,)).fetchone() is not None
+
+    def es_base_de_demo(self) -> bool:
+        """La armó ``demo_real``: tiene solicitudes de origen ``demo`` (CUIT reservados, ADR 0009)."""
+        return self._ejecutar("SELECT 1 FROM solicitudes WHERE origen = 'demo' LIMIT 1").fetchone() is not None
 
     def solicitud(self, id: str) -> SolicitudGuardada:
         fila = self._ejecutar("SELECT * FROM solicitudes WHERE id = ?", (id,)).fetchone()
