@@ -10,7 +10,8 @@
 #   RELEVO_AWS_PERFIL  perfil de AWS CLI (default: relevo-s3)
 #
 # relevo.sqlite no se sincroniza: es la base de trabajo de cada persona
-# (solicitudes y evaluaciones) y no se comparte. Nunca borra nada: ni en el
+# (solicitudes y evaluaciones) y no se comparte. Tampoco la demo con datos
+# reales (demo.sqlite y demo/): tiene CUIT reales (ADR 0009). Nunca borra nada: ni en el
 # bucket ni en data/.
 
 set -euo pipefail
@@ -40,7 +41,7 @@ command -v aws >/dev/null || { echo "Falta AWS CLI (brew install awscli)." >&2; 
 aws sts get-caller-identity --profile "$PERFIL" >/dev/null 2>&1 \
     || { echo "El perfil '$PERFIL' no existe o no tiene credenciales válidas (aws configure --profile $PERFIL)." >&2; exit 1; }
 
-excluir=(--exclude "relevo.sqlite" --exclude "*.DS_Store")
+excluir=(--exclude "relevo.sqlite" --exclude "demo.sqlite" --exclude "demo/*" --exclude "*.DS_Store")
 
 case "$accion" in
     bajar)

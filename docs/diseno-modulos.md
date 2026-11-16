@@ -129,6 +129,8 @@ FastAPI más plantillas Jinja y JS sin frameworks. Tiene cuatro pantallas: Bande
 
 Genera las carteras sintéticas por segmento, entrena el scorecard logístico, exporta los coeficientes y crea los documentos de ejemplo. No es parte del runtime.
 
+`demo_real` (offline) arma una base de demo con solicitantes y mora reales de la Central de Deudores: muestrea CUIT reservados (ADR 0009), los evalúa con `Servicio` en la fecha en que habrían pedido y escribe su cartera con la mora observada.
+
 `sintetico_cartera` (también offline) inventa lo que pasó después de evaluar las solicitudes otorgadas de una base y lo escribe en el formato de `CarteraEnArchivos`, así se lee por el seam real.
 
 ## Orden de construcción (TDD, de adentro hacia afuera)
@@ -217,3 +219,16 @@ Genera las carteras sintéticas por segmento, entrena el scorecard logístico, e
 - **Desvío plantado por defecto**: el rating C triplica su PD en los desembolsos de los últimos 4 meses antes del corte (`--sin-desvio` lo saca). Sirve para probar alertas.
 - **Solo meses cerrados** a la fecha de corte, y un generador por solicitud (semilla + id): agregar evaluaciones no cambia la cartera de las que ya estaban.
 - Usa solo la biblioteca estándar, así que no necesita el extra `sintetico`.
+
+## Decisiones tomadas al construir la demo con datos reales (ADR 0009)
+
+- **Solicitantes**: por período de observación (202509 a 202606), CUIT reservados con deuda informada en la central. Las jurídicas van a PyME y las personas humanas adheridas al monotributo (según `data/arca.sqlite`) a monotributistas. Se muestrea por prefijo, porque las jurídicas son poco más del 1 % de los CUIT.
+- **Sin datos del futuro en CENDEU**: la central hasta el período observado se arma en el formato de `/Deudas` y `/Deudas/Historicas` y la traduce el adapter real, así el snapshot es igual al de una consulta en vivo. La evaluación se fecha el mes siguiente al período, sin la demora real de publicación del BCRA.
+- **Fuentes**:
+  - Reales: IGJ, ARCA y la fecha de nacimiento del padrón del bucket. ARCA e IGJ son los snapshots actuales, posteriores a la evaluación: es el único dato que mira el futuro.
+  - Real histórica: BADLAR, consultada al BCRA con la fecha de cada evaluación.
+  - Sintéticos: bureau (correlacionado con la peor situación real), ventas de la PyME (a partir de su deuda), antigüedad de la actividad y monto y plazo pedidos.
+  - Cheques: el bucket no los tiene. Se asumen *sin antecedentes*, porque una fuente no disponible deriva el caso (ADR 0006) y la cartera quedaría vacía.
+- **Mora**: la peor situación de cada mes posterior se traduce a días (2 → 60, 3 → 120, 4 → 270, 5 y 6 → 365). Un mes sin deuda informada es mora 0. Es la mora del solicitante en todo el sistema, no la de un crédito nuestro: es la mejor aproximación disponible.
+- **Desempeño**: la central llega a 202609 (en `deudores/` está incompleto y se toma de `deudores_mensual/`). Las cohortes de 202509 tienen 11 meses observados y las de 202606, 2.
+- **Lectura del bucket**: duckdb lee de S3 solo las columnas que usa. La extracción se guarda en `data/demo/extraccion.json` para no volver a leer el bucket al regenerar.
