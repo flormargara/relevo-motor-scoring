@@ -9,7 +9,7 @@ from adapters_falsos import FabricaFalsa
 from conftest import BASE_MONOTRIBUTISTA, BASE_PYME, CUIL_MONOTRIBUTISTA, CUIT_PYME
 from relevo.consultor import NoDisponible
 from relevo.consultor_real import cargar_config_fuentes
-from relevo.dominio import Veredicto
+from relevo.dominio import Solicitud, Veredicto
 from relevo.reglas import DIRECTORIO_REGLAS
 from relevo.repositorio import Repositorio
 from relevo.servicio import ConsentimientoRequerido, Servicio, SolicitudInvalida
@@ -160,6 +160,19 @@ def test_casos_precargados_se_suman_y_no_se_duplican(tmp_path: Path):
     mono = servicio.repositorio.solicitud(nuevos[1])
     assert mono.origen == "precargado" and mono.consentimiento
     assert mono.documentos == {"categoria_monotributo": "D"}
+
+
+def test_la_base_de_demo_no_recibe_casos_precargados():
+    servicio, _ = armar()
+    servicio.repositorio.crear_solicitud(
+        Solicitud(cuit=CUIT_PYME, segmento="pyme", monto=1_000_000, plazo_meses=12),
+        origen="demo",
+        consentimiento=True,
+        id="demo-202601-x",
+    )
+
+    assert servicio.cargar_precargados([Path(__file__).parents[1] / "config" / "casos_precargados.yaml"]) == []
+    assert not servicio.repositorio.existe_solicitud("pre-pyme-30546689979")
 
 
 def test_el_archivo_de_casos_versionado_carga():
