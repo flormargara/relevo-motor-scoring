@@ -123,7 +123,7 @@ La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008):
 
 ## 6. `app`
 
-FastAPI más plantillas Jinja y JS sin frameworks. Tiene cuatro pantallas: Bandeja, Caso, Reglas (el editor de cada flujo) e Historial de reglas. Es delgada a propósito: arma la solicitud, llama a `evaluar`, guarda el resultado y lo muestra.
+FastAPI más plantillas Jinja y JS sin frameworks. Tiene cinco pantallas: Nueva solicitud, Histórico (las últimas 20, con búsqueda por CUIT, denominación o id), Caso, Backoffice (el editor de reglas de cada flujo) e Historial de reglas. Es delgada a propósito: arma la solicitud, llama a `evaluar`, guarda el resultado y lo muestra.
 
 ## 7. `sintetico` (offline)
 

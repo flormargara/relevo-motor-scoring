@@ -76,6 +76,28 @@ def test_bandeja_muestra_la_ultima_evaluacion(repo, reglas_pyme):
     assert [f.solicitud.id for f in repo.bandeja()] == [evaluada, sin_evaluar]  # más nueva primero
 
 
+def test_bandeja_pagina_busca_y_cuenta(repo, reglas_pyme):
+    from dataclasses import replace
+
+    ids = [
+        repo.crear_solicitud(replace(solicitud_pyme(), cuit=f"3071234{i:04d}"), ahora=AHORA + timedelta(minutes=i))
+        for i in range(25)
+    ]
+    ypf = repo.crear_solicitud(replace(solicitud_pyme(), cuit="30546689979"), ahora=AHORA - timedelta(days=1))
+    consultor = armar_consultor(BASE_PYME, cendeu={"denominacion": "YPF SOCIEDAD ANONIMA"})
+    repo.guardar_evaluacion(ypf, evaluar(solicitud_pyme(), reglas_pyme, consultor))
+
+    assert [f.solicitud.id for f in repo.bandeja(limite=3)] == ids[:-4:-1]  # las más nuevas primero
+    assert [f.solicitud.id for f in repo.bandeja(limite=2, desplazamiento=3)] == ids[-4:-6:-1]
+    assert repo.contar_solicitudes() == 26
+    assert [f.solicitud.id for f in repo.bandeja("30-54668997-9")] == [ypf]  # CUIT con guiones
+    assert [f.solicitud.id for f in repo.bandeja("ypf")] == [ypf]  # denominación, sin importar mayúsculas
+    assert [f.solicitud.id for f in repo.bandeja(ids[7])] == [ids[7]]  # id
+    assert repo.contar_solicitudes("3071234") == 25
+    assert repo.bandeja("no existe") == []
+    assert repo.sin_evaluar() == ids[::-1]
+
+
 def test_la_denominacion_sale_de_cendeu_o_igj(repo, reglas_pyme):
     id = repo.crear_solicitud(solicitud_pyme())
     consultor = armar_consultor(BASE_PYME, cendeu={"denominacion": "YPF SOCIEDAD ANONIMA"})

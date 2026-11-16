@@ -92,8 +92,9 @@
 <body>
 <header class="barra"><div class="contenido">
   <a class="marca" href="/">Relevo AI</a>
-  <a href="/" class="{{ 'activo' if seccion == 'bandeja' }}">Bandeja</a>
-  <a href="/reglas" class="{{ 'activo' if seccion == 'reglas' }}">Reglas</a>
+  <a href="/nueva" class="{{ 'activo' if seccion == 'nueva' }}">Nueva solicitud</a>
+  <a href="/" class="{{ 'activo' if seccion == 'historico' }}">Histórico</a>
+  <a href="/reglas" class="{{ 'activo' if seccion == 'backoffice' }}">Backoffice</a>
 </div></header>
 <main class="contenido">
 {% block contenido %}{% endblock %}

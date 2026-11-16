@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% set seccion = "historico" %}
+{% block titulo %}Histórico{% endblock %}
+{% block contenido %}
+<h1>Histórico de solicitudes</h1>
+<p class="sub">Las más nuevas primero. Buscá por CUIT/CUIL, denominación o id de la solicitud.</p>
+
+<section class="tarjeta">
+  <div class="acciones" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <form method="get" action="/" class="acciones" style="flex: 1; max-width: 520px;" role="search">
+      <input name="q" value="{{ q }}" placeholder="30-71234567-1, razón social o id" aria-label="Buscar solicitudes" style="flex: 1;">
+      <button>Buscar</button>
+      {% if q %}<a class="boton" href="/">Limpiar</a>{% endif %}
+    </form>
+    <div class="acciones" style="align-items: center;">
+      {% if pendientes %}
+      <form class="inline" method="post" action="/evaluar-pendientes"><button>Evaluar pendientes ({{ pendientes }})</button></form>
+      {% endif %}
+      <a class="boton" href="/nueva">Nueva solicitud</a>
+    </div>
+  </div>
+  {% if filas %}
+  <p class="suave" style="margin: 0 0 8px; font-size: 13px;">Mostrando {{ filas | length }} de {{ total | numero }}{% if q %} que coinciden con «{{ q }}»{% endif %}.</p>
+  <table>
+    <thead><tr>
+      <th>Solicitante</th><th>Segmento</th><th class="num">Monto</th><th class="num">Plazo</th>
+      <th>Veredicto</th><th>Rating</th><th>Evaluada</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for fila in filas %}
+      {% set s = fila.solicitud %}
+      <tr>
+        <td><a href="/solicitudes/{{ s.id }}">{{ fila.denominacion or s.solicitud.cuit }}</a>
+          <div class="suave"><code>{{ s.solicitud.cuit }}</code>{% if s.origen == "precargado" %} · precargado{% endif %}</div></td>
+        <td>{{ "PyME" if s.solicitud.segmento == "pyme" else "Monotributista" }}</td>
+        <td class="num">{{ s.solicitud.monto | pesos }}</td>
+        <td class="num">{{ s.solicitud.plazo_meses }} m</td>
+        <td>{% if fila.veredicto %}<span class="chip {{ fila.veredicto.value }}">{{ fila.veredicto.value }}</span>{% else %}<span class="chip">sin evaluar</span>{% endif %}</td>
+        <td>{{ fila.rating or "—" }}</td>
+        <td class="suave">{{ fila.evaluada_en | fecha }}</td>
+        <td>
+          <form class="inline" method="post" action="/solicitudes/{{ s.id }}/evaluar"><button>{{ "Reevaluar" if fila.veredicto else "Evaluar" }}</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if filas | length < total %}
+  <div style="margin-top: 12px;"><a class="boton" href="/?{{ {'q': q, 'limite': limite + por_pagina} | urlencode }}">Ver {{ por_pagina }} más</a></div>
+  {% endif %}
+  {% elif q %}
+  <p class="suave">Ninguna solicitud coincide con «{{ q }}».</p>
+  {% else %}
+  <p class="suave">No hay solicitudes. <a href="/nueva">Cargá la primera</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

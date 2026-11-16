@@ -1,9 +1,9 @@
-"""Las pantallas: Bandeja, Caso y Reglas (HTML con Jinja).
+"""Las pantallas: Histórico, Nueva solicitud, Caso y Backoffice (el editor de reglas), con Jinja.
 
 Son delgadas a propósito: arman la solicitud, llaman al servicio (que llama a ``evaluar``),
 guardan y muestran. Quedan fuera del esquema OpenAPI: el contrato del motor es ``api``.
 Los endpoints JSON del editor de reglas (validar, borrador, publicar) son internos de
-la pantalla Reglas, no parte de ese contrato.
+la pantalla Backoffice, no parte de ese contrato.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from relevo.repositorio import EvaluacionGuardada, Repositorio, SolicitudInexist
 from relevo.servicio import EXTENSIONES_DOCUMENTO, SEGMENTOS, Servicio, SolicitudInvalida
 from relevo.versiones_reglas import ConflictoDeVersion
 
+POR_PAGINA = 20  # solicitudes que muestra el histórico de entrada
 PLANTILLAS = Jinja2Templates(directory=Path(__file__).parent / "plantillas")
 
 
@@ -49,12 +50,11 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
     def pagina(request: Request, plantilla: str, status_code: int = 200, **contexto: Any) -> HTMLResponse:
         return PLANTILLAS.TemplateResponse(request, plantilla, contexto, status_code=status_code)
 
-    def bandeja(request: Request, error: str | None = None, formulario: dict | None = None) -> HTMLResponse:
+    def nueva(request: Request, error: str | None = None, formulario: dict | None = None) -> HTMLResponse:
         return pagina(
             request,
-            "bandeja.html",
+            "nueva.html",
             status_code=400 if error else 200,
-            filas=repo.bandeja(),
             segmentos=SEGMENTOS,
             error=error,
             formulario=formulario or {},
@@ -62,8 +62,22 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
         )
 
     @router.get("/", response_class=HTMLResponse)
-    def ver_bandeja(request: Request):
-        return bandeja(request)
+    def ver_historico(request: Request, q: str = "", limite: int = POR_PAGINA):
+        limite = max(POR_PAGINA, min(limite, 500))
+        return pagina(
+            request,
+            "historico.html",
+            filas=repo.bandeja(buscar=q, limite=limite),
+            total=repo.contar_solicitudes(q),
+            pendientes=len(repo.sin_evaluar()),
+            q=q,
+            limite=limite,
+            por_pagina=POR_PAGINA,
+        )
+
+    @router.get("/nueva", response_class=HTMLResponse)
+    def ver_nueva(request: Request):
+        return nueva(request)
 
     @router.post("/solicitudes")
     def alta(
@@ -100,15 +114,14 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
             )
         except SolicitudInvalida as error:
             formulario = {"cuit": cuit, "segmento": segmento, "monto": monto, "plazo_meses": plazo_meses}
-            return bandeja(request, error=str(error), formulario=formulario)
+            return nueva(request, error=str(error), formulario=formulario)
         servicio.evaluar(id)
         return RedirectResponse(f"/solicitudes/{id}", status_code=303)
 
     @router.post("/evaluar-pendientes")
     def evaluar_pendientes():
-        for fila in repo.bandeja():
-            if fila.veredicto is None:
-                servicio.evaluar(fila.solicitud.id)
+        for id in repo.sin_evaluar():
+            servicio.evaluar(id)
         return RedirectResponse("/", status_code=303)
 
     @router.get("/solicitudes/{id}", response_class=HTMLResponse)

@@ -1,4 +1,4 @@
-"""App web: Bandeja, Caso y Reglas, con fuentes y agente falsos."""
+"""App web: Histórico, Nueva solicitud, Caso y Backoffice, con fuentes y agente falsos."""
 
 import json
 import re
@@ -51,6 +51,35 @@ def test_bandeja_vacia(cliente):
 
     assert respuesta.status_code == 200
     assert "No hay solicitudes" in respuesta.text
+
+
+def test_las_pestanas_separan_alta_historico_y_backoffice(cliente):
+    http, _ = cliente()
+
+    historico, nueva = http.get("/").text, http.get("/nueva").text
+
+    assert 'name="cuit"' in nueva and 'name="q"' not in nueva
+    assert 'name="q"' in historico and 'name="cuit"' not in historico
+    for pagina in (historico, nueva, http.get("/reglas").text):
+        assert ">Nueva solicitud</a>" in pagina and ">Histórico</a>" in pagina and ">Backoffice</a>" in pagina
+        assert ">Reglas</a>" not in pagina
+    assert 'class="activo">Backoffice' in http.get("/reglas").text
+
+
+def test_el_historico_muestra_veinte_y_busca(cliente):
+    http, servicio = cliente()
+    ids = [servicio.alta(f"3071234{i:04d}", "pyme", 1_000_000, 12) for i in range(25)]
+
+    pagina = http.get("/").text
+    assert pagina.count('/evaluar"') == 20
+    assert "Mostrando 20 de 25" in pagina
+    assert "Evaluar pendientes (25)" in pagina
+    assert "limite=40" in pagina  # ver más
+
+    assert http.get("/?limite=40").text.count('/evaluar"') == 25
+    buscada = http.get("/", params={"q": "30-71234-0007"}).text
+    assert ids[7] in buscada and ids[8] not in buscada
+    assert "Ninguna solicitud coincide" in http.get("/", params={"q": "nada"}).text
 
 
 def test_alta_evalua_y_muestra_el_caso(cliente):
@@ -332,7 +361,7 @@ def test_el_formulario_pide_la_fecha_de_nacimiento_y_la_guarda(cliente):
 
     http, servicio = cliente()
 
-    assert 'name="fecha_nacimiento"' in http.get("/").text
+    assert 'name="fecha_nacimiento"' in http.get("/nueva").text
     respuesta = alta(
         http, cuit=CUIL_MONOTRIBUTISTA, segmento="monotributista", consentimiento="true", fecha_nacimiento="1986-11-11"
     )

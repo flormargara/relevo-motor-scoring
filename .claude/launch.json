@@ -4,8 +4,28 @@
     {
       "name": "relevo",
       "runtimeExecutable": ".venv/bin/uvicorn",
-      "runtimeArgs": ["relevo.app:crear_app", "--factory", "--reload", "--port", "8000"],
+      "runtimeArgs": [
+        "relevo.app:crear_app",
+        "--factory",
+        "--reload",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "relevo-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "RELEVO_DB=data/demo.sqlite",
+        ".venv/bin/uvicorn",
+        "relevo.app:crear_app",
+        "--factory",
+        "--reload",
+        "--port",
+        "8001"
+      ],
+      "port": 8001
     }
   ]
 }
