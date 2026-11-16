@@ -93,7 +93,7 @@ scripts/datos_s3.sh bajar
 
 `bajar` trae lo que falta o cambió; con `--dryrun` muestra qué haría sin tocar nada. Quien actualiza un snapshot (ARCA cada tanto, IGJ cada semestre) lo regenera y corre `scripts/datos_s3.sh subir`, y avisa al equipo para que vuelvan a bajar.
 
-- `relevo.sqlite` no se sincroniza: es la base de trabajo de cada uno (solicitudes y evaluaciones).
+- `relevo.sqlite` no se sincroniza: es la base de trabajo de cada uno (solicitudes y evaluaciones). Tampoco la demo con datos reales (`demo.sqlite` y `demo/`).
 - El script nunca borra archivos, ni en el bucket ni en `data/`.
 - Las claves van solo en `~/.aws/credentials`: nunca en el repo ni en `.env`.
 - Variables opcionales: `RELEVO_S3_BUCKET`, `RELEVO_S3_PREFIJO` y `RELEVO_AWS_PERFIL`.
@@ -138,3 +138,15 @@ La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008).
 ```
 
 Escribe tres CSV en `data/cartera/` (`conversiones`, `desembolsos`, `estados`), que se leen con `CarteraEnArchivos`, el mismo adapter que usaría una entidad que entrega archivos.
+
+## Demo con datos reales
+
+Una base aparte con solicitantes y mora reales de la Central de Deudores (ADR 0009). Necesita el extra `demo` y un perfil de AWS con lectura del bucket `data-cendeu-raw`:
+
+```bash
+.venv/bin/pip install -e '.[dev,demo]'
+.venv/bin/python -m relevo.demo_real --perfil fmargara
+RELEVO_DB=data/demo.sqlite .venv/bin/uvicorn relevo.app:crear_app --factory
+```
+
+Deja la base en `data/demo.sqlite` y la cartera en `data/demo/cartera/`. Los CUIT son reales: nada de eso va a git ni al bucket compartido.

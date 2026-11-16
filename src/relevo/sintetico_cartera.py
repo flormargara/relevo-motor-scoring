@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import math
 import random
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -76,12 +76,20 @@ def generar(
     hasta: date,
     semilla: int = SEMILLA,
     desvios: Sequence[Desvio] = (),
+    mora: Mapping[str, Mapping[date, int]] | None = None,
 ) -> list[RegistroCartera]:
-    """La cartera observada al cierre del mes de ``hasta``: solo meses completos."""
-    return [_registro(o, hasta, semilla, desvios) for o in otorgadas]
+    """La cartera observada al cierre del mes de ``hasta``: solo meses completos.
+
+    Con ``mora`` (días de mora por período, por solicitud) la mora de esas solicitudes no
+    se sortea con la PD: es la observada (p. ej. en la Central de Deudores). La conversión,
+    el desembolso y los pagos siguen siendo sintéticos."""
+    mora = mora or {}
+    return [_registro(o, hasta, semilla, desvios, mora.get(o.solicitud_id)) for o in otorgadas]
 
 
-def _registro(o: Otorgada, hasta: date, semilla: int, desvios: Sequence[Desvio]) -> RegistroCartera:
+def _registro(
+    o: Otorgada, hasta: date, semilla: int, desvios: Sequence[Desvio], mora_observada: Mapping[date, int] | None
+) -> RegistroCartera:
     rng = random.Random(f"{semilla}:{o.solicitud_id}")
     if rng.random() >= CONVERSION_POR_RATING.get(o.rating, 0.65):
         return RegistroCartera(o.solicitud_id, convertida=False)
@@ -91,6 +99,39 @@ def _registro(o: Otorgada, hasta: date, semilla: int, desvios: Sequence[Desvio])
     if fecha > hasta:
         return RegistroCartera(o.solicitud_id, convertida=True, desembolso=desembolso)
 
+    plazo = o.oferta.plazo_meses
+    if mora_observada is not None:
+        dias_mora = lambda k, periodo: mora_observada.get(periodo, 0)  # noqa: E731
+    else:
+        dias_mora = _mora_sorteada(o, fecha, rng, desvios)
+
+    tasa = o.oferta.tasa_nominal_anual / 1200
+    cuota = o.oferta.cuota
+    saldo = o.oferta.monto
+    adeudadas = 0  # cuotas impagas, que se pagan juntas al regularizar
+    estados = []
+    for k in range(1, plazo + MESES_EXTRA_EN_DEFAULT + 1):
+        periodo = _sumar_meses(_mes(fecha), k)
+        if _sumar_meses(periodo, 1) > hasta + timedelta(days=1):  # el mes todavía no cerró
+            break
+        if (dias := dias_mora(k, periodo)) > 0:
+            adeudadas += 1
+            estados.append(EstadoMensual(periodo, round(saldo, 2), 0.0, dias))
+            continue
+        pagado = 0.0
+        for _ in range(1 + adeudadas):
+            pago = min(cuota, saldo * (1 + tasa))
+            saldo = saldo * (1 + tasa) - pago
+            pagado += pago
+        adeudadas = 0
+        estados.append(EstadoMensual(periodo, round(max(saldo, 0.0), 2), round(pagado, 2), 0))
+        if saldo <= 0.01:
+            break
+    return RegistroCartera(o.solicitud_id, convertida=True, desembolso=desembolso, estados=tuple(estados))
+
+
+def _mora_sorteada(o: Otorgada, fecha: date, rng: random.Random, desvios: Sequence[Desvio]):
+    """Días de mora por mes desde el desembolso, sorteados con la PD de la evaluación."""
     factor = math.prod(d.factor for d in desvios if d.rating == o.rating and fecha >= d.desde)
     ruido = math.exp(rng.gauss(0, RUIDO_PD) - RUIDO_PD**2 / 2)  # media 1: no corre la PD
     pd = min(0.95, o.pd * factor * ruido)
@@ -104,31 +145,12 @@ def _registro(o: Otorgada, hasta: date, semilla: int, desvios: Sequence[Desvio])
     mes_atraso = rng.randint(1, max(1, plazo - 1)) if mes_default is None and rng.random() < 2 * pd else None
     primer_impago = mes_default - meses_mora + 1 if mes_default else None
 
-    tasa = o.oferta.tasa_nominal_anual / 1200
-    cuota = o.oferta.cuota
-    saldo = o.oferta.monto
-    ultimo = plazo + (MESES_EXTRA_EN_DEFAULT if mes_default else 0)
-    estados = []
-    for k in range(1, ultimo + 1):
-        periodo = _sumar_meses(_mes(fecha), k)
-        if _sumar_meses(periodo, 1) > hasta + timedelta(days=1):  # el mes todavía no cerró
-            break
+    def dias(k: int, periodo: date) -> int:
         if primer_impago and k >= primer_impago:
-            estados.append(EstadoMensual(periodo, round(saldo, 2), 0.0, 30 * (k - primer_impago + 1)))
-            continue
-        if k == mes_atraso:
-            estados.append(EstadoMensual(periodo, round(saldo, 2), 0.0, 30))
-            continue
-        cuotas = 2 if mes_atraso is not None and k == mes_atraso + 1 else 1
-        pagado = 0.0
-        for _ in range(cuotas):
-            pago = min(cuota, saldo * (1 + tasa))
-            saldo = saldo * (1 + tasa) - pago
-            pagado += pago
-        estados.append(EstadoMensual(periodo, round(max(saldo, 0.0), 2), round(pagado, 2), 0))
-        if saldo <= 0.01:
-            break
-    return RegistroCartera(o.solicitud_id, convertida=True, desembolso=desembolso, estados=tuple(estados))
+            return 30 * (k - primer_impago + 1)
+        return 30 if k == mes_atraso else 0
+
+    return dias
 
 
 def otorgadas(repositorio: Repositorio) -> list[Otorgada]:

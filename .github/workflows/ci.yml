@@ -26,7 +26,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Instalar
-        run: pip install -e '.[dev,sintetico]'
+        run: pip install -e '.[dev,sintetico,demo]'
 
       - name: Lint
         run: ruff check src tests
