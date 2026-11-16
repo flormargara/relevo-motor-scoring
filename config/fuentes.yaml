@@ -17,3 +17,4 @@ propios:    {costo: gratuita, reintentos: 0}
 identidad:  {costo: gratuita, timeout: 10, reintentos: 1, espera: 1}
 documentos: {costo: gratuita, reintentos: 0}
 bureau:     {costo: paga, timeout: 10, reintentos: 1, espera: 1, reutilizar_dias: 30}
+modelo_ml:  {costo: gratuita, timeout: 5, reintentos: 1, espera: 1}   # ADR 0010; RELEVO_MODELO_URL

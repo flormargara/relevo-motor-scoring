@@ -27,6 +27,31 @@
         "8001"
       ],
       "port": 8001
+    },
+    {
+      "name": "modelo-prueba",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "relevo.modelo_prueba",
+        "--puerto",
+        "8100"
+      ],
+      "port": 8100
+    },
+    {
+      "name": "relevo-ml",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "RELEVO_DB=data/modelo-prueba.sqlite",
+        "RELEVO_MODELO_URL=http://127.0.0.1:8100",
+        ".venv/bin/uvicorn",
+        "relevo.app:crear_app",
+        "--factory",
+        "--port",
+        "8002"
+      ],
+      "port": 8002
     }
   ]
 }

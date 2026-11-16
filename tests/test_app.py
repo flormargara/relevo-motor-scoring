@@ -546,3 +546,10 @@ def test_el_chat_sin_agente(cliente):
     respuesta = cliente()[0].post("/chat/preguntar", json={"pregunta": "¿Cómo viene?"})
 
     assert respuesta.status_code == 503 and "no hay agente configurado" in respuesta.json()["error"]
+
+
+def test_backoffice_ofrece_los_modelos_del_segmento(cliente):
+    pagina = cliente()[0].get("/reglas?flujo=pyme").text
+
+    assert '"archivo": "pyme-prueba.v1.json"' in pagina and '"tipo": "externo"' in pagina
+    assert "monotributista-prueba" not in pagina.split("const DATOS")[1].split("\n")[0]

@@ -1,0 +1,29 @@
+{
+  "tipo": "externo",
+  "modelo": "pyme-prueba",
+  "version": "1",
+  "descripcion": "Modelo de PRUEBA (relevo.modelo_prueba): la PD es falsa. Solo para probar la integración (ADR 0010).",
+  "provisional": true,
+  "ratings": [
+    {
+      "rating": "A",
+      "pd_hasta": 0.02
+    },
+    {
+      "rating": "B",
+      "pd_hasta": 0.05
+    },
+    {
+      "rating": "C",
+      "pd_hasta": 0.1
+    },
+    {
+      "rating": "D",
+      "pd_hasta": 0.2
+    },
+    {
+      "rating": "E",
+      "pd_hasta": 1.0
+    }
+  ]
+}

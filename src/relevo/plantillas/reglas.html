@@ -21,6 +21,9 @@
 {% elif borrador %}
 <div class="aviso">Hay un borrador en curso, guardado el {{ borrador.actualizado_en | fecha }}.</div>
 {% endif %}
+{% for aviso in avisos_modelo %}
+<div class="error">Modelo de ML: {{ aviso }}.</div>
+{% endfor %}
 <div id="raiz"></div>
 <div id="ac"></div>
 
@@ -149,6 +152,26 @@ function alCambiar(f) { oyentes.push(f); }
 function notificarCambio() { guardarBorrador(); }
 function render() { oyentes.length = 0; ocultarAc(); renderEditor(); avisar(); }
 function cambioEstructural() { render(); guardarBorrador(); }
+
+// El modelo del scorecard: uno de puntos o uno de ML externo (ADR 0010). Sin PD de un modelo
+// externo no hay rating, así que si falta se deriva (o se rechaza): seguir no es una opción.
+function selectorModelo() {
+  const modelos = DATOS.modelos || [];
+  const actual = estado.scorecard.modelo;
+  const opciones = modelos.some((m) => m.archivo === actual) ? modelos : [{ archivo: actual, descripcion: "" }, ...modelos];
+  return el("select", {
+      style: "width:auto;display:inline-block;padding:2px 6px", "aria-label": "Modelo del scorecard",
+      onchange: (e) => {
+        const elegido = modelos.find((m) => m.archivo === e.target.value);
+        estado.scorecard.modelo = e.target.value;
+        if (elegido && elegido.tipo === "externo" && (estado.scorecard.si_no_disponible || "continuar") === "continuar") {
+          estado.scorecard.si_no_disponible = "derivar";
+        }
+        cambioEstructural();
+      } },
+    opciones.map((m) => el("option", { value: m.archivo, selected: m.archivo === actual, title: m.descripcion || "" },
+      m.archivo + (m.tipo === "externo" ? " (ML externo)" : ""))));
+}
 
 // --- operaciones sobre el borrador --------------------------------------
 function agregarRegla(sec) {
@@ -377,7 +400,7 @@ function renderEditor() {
     paso(1, "Killers: rechazan y cortan, en este orden", ...estado.killers.map((r, i) => regla("killers", r, i)), nueva("killers", "+ Killer")),
     paso(2, "Derivaciones: mandan el caso a un analista", ...estado.derivaciones.map((r, i) => regla("derivaciones", r, i)), nueva("derivaciones", "+ Derivación")),
     paso(3, "Scorecard → rating → decisión",
-      el("p", { class: "suave", style: "margin:0" }, "El modelo ", el("code", {}, estado.scorecard.modelo),
+      el("p", { class: "suave", style: "margin:0" }, "El modelo ", selectorModelo(),
         ` calcula la PD y la ubica en un rating. ${calidad}Los ratings y sus topes los define el modelo y no se editan. Clic en un rating para decidir si aprueba, deriva o rechaza.`),
       barra,
       el("details", { open: detallesAbiertos, ontoggle: (e) => (detallesAbiertos = e.target.open) },

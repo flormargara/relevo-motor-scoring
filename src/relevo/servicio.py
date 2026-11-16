@@ -30,9 +30,10 @@ from relevo.catalogo import catalogo, flujo_de_originacion, flujos
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
-from relevo.fuentes import AdapterFuente
+from relevo.fuentes import AdapterFuente, modelo_ml
 from relevo.fuentes.documentos import variables_documentos
 from relevo.fuentes.identidad import IdentidadDeclarada
+from relevo.fuentes.modelo_ml import ConexionModelo, ModeloML, periodo_de
 from relevo.motor import evaluar
 from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas, ReglasInvalidas
 from relevo.repositorio import AlmacenSqlite, EvaluacionGuardada, Repositorio, SolicitudGuardada
@@ -73,6 +74,7 @@ class Servicio:
         cliente_claude: ClienteClaude | None = None,
         directorio_documentos: Path = DOCUMENTOS,
         cartera: FuenteDeCartera | None = None,
+        conexion_modelo: ConexionModelo | None = None,
     ):
         self.repositorio = repositorio
         self.adapters = adapters or self._adapters_reales
@@ -86,13 +88,18 @@ class Servicio:
         self.cliente_claude = cliente_claude or SinAgente()
         self.directorio_documentos = directorio_documentos
         self.cartera = cartera
+        self.conexion_modelo = conexion_modelo or ConexionModelo(None)
         self._cliente: httpx.Client | None = None
         self._lock = threading.Lock()
 
-    def _adapters_reales(self, guardada: SolicitudGuardada) -> Mapping[str, AdapterFuente]:
+    def _http(self) -> httpx.Client:
         with self._lock:
             if self._cliente is None:
                 self._cliente = httpx.Client()
+            return self._cliente
+
+    def _adapters_reales(self, guardada: SolicitudGuardada) -> Mapping[str, AdapterFuente]:
+        self._http()
         # Los casos precargados usan la identidad simulada; el alta manual y la de la API usan la
         # fecha declarada. En producción, RENAPER ocupa el lugar de IdentidadDeclarada con las mismas variables.
         identidad = None
@@ -305,9 +312,19 @@ class Servicio:
     def evaluar(self, solicitud_id: str) -> int:
         guardada = self.repositorio.solicitud(solicitud_id)
         reglas = self.reglas(flujo_de_originacion(guardada.solicitud.segmento).id)
+        adapters = dict(self.adapters(guardada))
+        if reglas.scorecard.externo and "modelo_ml" not in adapters:
+            adapters["modelo_ml"] = ModeloML(
+                self._http(),
+                self.conexion_modelo,
+                reglas.scorecard.externo.modelo,
+                reglas.scorecard.externo.version,
+                guardada.solicitud.segmento,
+                periodo_de(self.ahora_fecha()),
+            )
         consultor = ConsultorReal(
             identificacion=guardada.solicitud.cuit,
-            adapters=self.adapters(guardada),
+            adapters=adapters,
             config=self.config_fuentes,
             almacen=AlmacenSqlite(self.repositorio),
             clave_solicitud=solicitud_id,
@@ -353,6 +370,41 @@ class Servicio:
 
     def reglas(self, flujo: str, version: int | None = None) -> Reglas:
         return self.versiones.reglas(flujo, version)
+
+    def modelos_disponibles(self, segmento: str) -> list[dict[str, str]]:
+        """Los descriptores de ``modelos/`` de un segmento: scorecards de puntos y modelos de ML externos."""
+        modelos = []
+        for archivo in sorted(DIRECTORIO_MODELOS.glob(f"{segmento}[.-]*.json")):
+            descriptor = json.loads(archivo.read_text(encoding="utf-8"))
+            modelos.append(
+                {
+                    "archivo": archivo.name,
+                    "tipo": descriptor.get("tipo", "puntos"),
+                    "descripcion": str(descriptor.get("descripcion", "")),
+                }
+            )
+        return modelos
+
+    def avisos_modelo(self, flujo: str) -> list[str]:
+        """Problemas de los modelos de ML externos que usan las reglas vigentes o el borrador: que el
+        servicio no publique la versión o que no declare la exclusión de los CUIT reservados (ADR 0009)."""
+        nombres = [self.reglas(flujo).scorecard.modelo]
+        if (borrador := self.versiones.borrador(flujo)) is not None:
+            nombres.append(str((borrador.contenido.get("scorecard") or {}).get("modelo", "")))
+        externos = {}
+        for nombre in nombres:
+            archivo = DIRECTORIO_MODELOS / nombre
+            if nombre and archivo.is_file():
+                descriptor = json.loads(archivo.read_text(encoding="utf-8"))
+                if descriptor.get("tipo") == "externo":
+                    externos[(descriptor.get("modelo"), str(descriptor.get("version")))] = nombre
+        if not externos:
+            return []
+        try:
+            publicados = modelo_ml.metadata(self._http(), self.conexion_modelo)
+        except modelo_ml.ModeloSinConexion as error:
+            return [str(error)]
+        return [aviso for modelo, version in externos for aviso in modelo_ml.verificar(publicados, modelo, version)]
 
     def texto_reglas(self, flujo: str) -> tuple[Reglas, str, dict[str, Any] | None]:
         """Reglas vigentes, su YAML tal cual y las métricas del modelo del scorecard."""

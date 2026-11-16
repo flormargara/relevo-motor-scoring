@@ -149,6 +149,23 @@ La pestaña **Monitoreo** cruza las solicitudes otorgadas con la cartera (`RELEV
 
 Los números se calculan sin agente. Cada alerta tiene un enlace para preguntarla en **Chat with your data**.
 
+## Modelo de ML
+
+El modelo de ML vive en otro repositorio. Relevo lo consulta como una fuente más (`modelo_ml`) por un endpoint con contrato fijo: [docs/contrato-modelo-ml.md](docs/contrato-modelo-ml.md) (ADR 0010).
+
+- **Reemplaza al scorecard.** En Backoffice, el selector de modelo del scorecard ofrece los descriptores de `modelos/`, tanto de puntos como de tipo `externo`. Las reglas que eligen un modelo externo toman su PD para el rating y la oferta. Si el modelo no responde, la solicitud se deriva o se rechaza.
+- **Conexión.** `RELEVO_MODELO_URL` y, si hace falta, `RELEVO_MODELO_TOKEN`. Sin URL, la fuente está no disponible.
+- **CUIT reservados.** Backoffice avisa si una versión que usan las reglas no está publicada o no declara la exclusión de los CUIT reservados para la demo (ADR 0009).
+
+Para probar la integración sin el repositorio del modelo hay un servidor que cumple el contrato. **Su PD es falsa:**
+
+```bash
+.venv/bin/python -m relevo.modelo_prueba --puerto 8100
+RELEVO_MODELO_URL=http://127.0.0.1:8100 RELEVO_DB=data/modelo-prueba.sqlite .venv/bin/uvicorn relevo.app:crear_app --factory
+```
+
+Sirve `pyme-prueba` (versiones 1 y 2) y `monotributista-prueba`, con los descriptores `modelos/*-prueba.v*.json`.
+
 ## Chat with your data
 
 La pestaña **Chat with your data** contesta preguntas sobre las evaluaciones, la cartera y las políticas (`relevo/chat_datos.py`). El agente nunca hace cuentas. Cada pregunta pasa por tres pasos:
