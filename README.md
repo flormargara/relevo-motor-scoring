@@ -154,6 +154,10 @@ Los números se calculan sin agente. Cada alerta tiene un enlace para preguntarl
 El modelo de ML vive en otro repositorio. Relevo lo consulta como una fuente más (`modelo_ml`) por un endpoint con contrato fijo: [docs/contrato-modelo-ml.md](docs/contrato-modelo-ml.md) (ADR 0010).
 
 - **Reemplaza al scorecard.** En Backoffice, el selector de modelo del scorecard ofrece los descriptores de `modelos/`, tanto de puntos como de tipo `externo`. Las reglas que eligen un modelo externo toman su PD para el rating y la oferta. Si el modelo no responde, la solicitud se deriva o se rechaza.
+- **Sombra y split.** En el mismo selector se puede repartir entre dos modelos (por ejemplo 50/50) y marcar modelos en sombra. Siempre decide uno solo.
+  - **Asignación.** Con split, a cada CUIT le toca siempre el mismo modelo, por un hash del CUIT con la semilla del split.
+  - **Lo que se guarda.** Los modelos que no deciden se calculan y quedan en la traza, en la etapa *Modelos en sombra*, sin cortar la evaluación.
+  - **Sin costo.** Un scorecard de puntos en sombra nunca consulta una fuente paga que no se haya consultado ya.
 - **Conexión.** `RELEVO_MODELO_URL` y, si hace falta, `RELEVO_MODELO_TOKEN`. Sin URL, la fuente está no disponible.
 - **CUIT reservados.** Backoffice avisa si una versión que usan las reglas no está publicada o no declara la exclusión de los CUIT reservados para la demo (ADR 0009).
 

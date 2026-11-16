@@ -122,6 +122,10 @@ class ConsultorReal:
             futuro.set_result(self._consultar(fuente))
         return futuro.result().resultado
 
+    def es_paga(self, fuente: str) -> bool:
+        """Los modelos en sombra solo usan fuentes gratuitas o ya consultadas (ADR 0010)."""
+        return self._config(fuente).paga
+
     def snapshots(self) -> list[Snapshot]:
         with self._lock:
             futuros = list(self._futuros.values())

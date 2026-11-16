@@ -153,24 +153,69 @@ function notificarCambio() { guardarBorrador(); }
 function render() { oyentes.length = 0; ocultarAc(); renderEditor(); avisar(); }
 function cambioEstructural() { render(); guardarBorrador(); }
 
-// El modelo del scorecard: uno de puntos o uno de ML externo (ADR 0010). Sin PD de un modelo
-// externo no hay rating, así que si falta se deriva (o se rechaza): seguir no es una opción.
-function selectorModelo() {
-  const modelos = DATOS.modelos || [];
-  const actual = estado.scorecard.modelo;
-  const opciones = modelos.some((m) => m.archivo === actual) ? modelos : [{ archivo: actual, descripcion: "" }, ...modelos];
+// El modelo del scorecard: uno de puntos o uno de ML externo (ADR 0010). Decide uno solo, o un
+// split que reparte las solicitudes entre varios; los de sombra se calculan y se guardan sin decidir.
+// Sin PD de un modelo externo no hay rating, así que si falta se deriva (o se rechaza).
+const MODELOS = DATOS.modelos || [];
+const esExterno = (archivo) => (MODELOS.find((m) => m.archivo === archivo) || {}).tipo === "externo";
+const deciden = () => (estado.scorecard.split || []).map((b) => b.modelo).concat(estado.scorecard.modelo ? [estado.scorecard.modelo] : []);
+
+function ajustarScorecard() {
+  const sc = estado.scorecard;
+  sc.sombra = (sc.sombra || []).filter((m) => !deciden().includes(m));
+  if (!sc.sombra.length) delete sc.sombra;
+  if (deciden().some(esExterno) && (sc.si_no_disponible || "continuar") === "continuar") sc.si_no_disponible = "derivar";
+  cambioEstructural();
+}
+
+function selectModelo(actual, alElegir, etiqueta) {
+  const opciones = MODELOS.some((m) => m.archivo === actual) ? MODELOS : [{ archivo: actual, descripcion: "" }, ...MODELOS];
   return el("select", {
-      style: "width:auto;display:inline-block;padding:2px 6px", "aria-label": "Modelo del scorecard",
-      onchange: (e) => {
-        const elegido = modelos.find((m) => m.archivo === e.target.value);
-        estado.scorecard.modelo = e.target.value;
-        if (elegido && elegido.tipo === "externo" && (estado.scorecard.si_no_disponible || "continuar") === "continuar") {
-          estado.scorecard.si_no_disponible = "derivar";
-        }
-        cambioEstructural();
-      } },
+      style: "width:auto;display:inline-block;padding:2px 6px", "aria-label": etiqueta,
+      onchange: (e) => { alElegir(e.target.value); ajustarScorecard(); } },
     opciones.map((m) => el("option", { value: m.archivo, selected: m.archivo === actual, title: m.descripcion || "" },
       m.archivo + (m.tipo === "externo" ? " (ML externo)" : ""))));
+}
+
+function selectorModelo() {
+  const sc = estado.scorecard;
+  if (!sc.split) {
+    const otro = MODELOS.find((m) => m.archivo !== sc.modelo);
+    return el("span", {},
+      selectModelo(sc.modelo, (v) => (sc.modelo = v), "Modelo del scorecard"), " ",
+      otro && el("button", { class: "mini", type: "button", onclick: () => {
+        sc.split = [{ modelo: sc.modelo, peso: 50 }, { modelo: otro.archivo, peso: 50 }];
+        delete sc.modelo;
+        ajustarScorecard();
+      } }, "Repartir con otro modelo (split)"));
+  }
+  const [a, b] = sc.split;
+  const total = sc.split.reduce((t, x) => t + Number(x.peso || 0), 0) || 1;
+  return el("span", {},
+    selectModelo(a.modelo, (v) => (a.modelo = v), "Primer modelo del split"),
+    " (", el("input", { type: "number", min: 1, max: 99, value: Math.round((a.peso / total) * 100), "aria-label": "Porcentaje del primer modelo",
+      style: "width:70px;display:inline-block;padding:2px 6px",
+      onchange: (e) => { const v = Math.min(99, Math.max(1, Number(e.target.value) || 50)); a.peso = v; b.peso = 100 - v; ajustarScorecard(); } }),
+    " %) y ", selectModelo(b.modelo, (v) => (b.modelo = v), "Segundo modelo del split"),
+    ` (${Math.round((b.peso / total) * 100)} %). A cada solicitante le toca siempre el mismo modelo; el otro se calcula en sombra. `,
+    el("button", { class: "mini", type: "button", onclick: () => { sc.modelo = a.modelo; delete sc.split; delete sc.semilla; ajustarScorecard(); } },
+      "Quitar el split"));
+}
+
+function selectorSombra() {
+  const sc = estado.scorecard;
+  const candidatos = MODELOS.filter((m) => !deciden().includes(m.archivo));
+  if (!candidatos.length) return null;
+  return el("p", { class: "suave", style: "margin:6px 0 0" }, "En sombra (se calculan y se guardan, no deciden): ",
+    candidatos.map((m) => el("label", { style: "display:inline-flex;gap:4px;margin-right:12px;color:inherit" },
+      el("input", { type: "checkbox", style: "width:auto", checked: (sc.sombra || []).includes(m.archivo),
+        onchange: (e) => {
+          const actual = new Set(sc.sombra || []);
+          e.target.checked ? actual.add(m.archivo) : actual.delete(m.archivo);
+          sc.sombra = [...actual];
+          ajustarScorecard();
+        } }),
+      m.archivo + (m.tipo === "externo" ? " (ML)" : ""))));
 }
 
 // --- operaciones sobre el borrador --------------------------------------
@@ -400,8 +445,10 @@ function renderEditor() {
     paso(1, "Killers: rechazan y cortan, en este orden", ...estado.killers.map((r, i) => regla("killers", r, i)), nueva("killers", "+ Killer")),
     paso(2, "Derivaciones: mandan el caso a un analista", ...estado.derivaciones.map((r, i) => regla("derivaciones", r, i)), nueva("derivaciones", "+ Derivación")),
     paso(3, "Scorecard → rating → decisión",
-      el("p", { class: "suave", style: "margin:0" }, "El modelo ", selectorModelo(),
-        ` calcula la PD y la ubica en un rating. ${calidad}Los ratings y sus topes los define el modelo y no se editan. Clic en un rating para decidir si aprueba, deriva o rechaza.`),
+      el("p", { class: "suave", style: "margin:0" }, estado.scorecard.split ? "La PD la calcula un split: " : "El modelo ", selectorModelo(),
+        estado.scorecard.split ? "" : " calcula la PD y la ubica en un rating. ",
+        `${calidad}Los ratings y sus topes los define el modelo y no se editan. Clic en un rating para decidir si aprueba, deriva o rechaza.`),
+      selectorSombra(),
       barra,
       el("details", { open: detallesAbiertos, ontoggle: (e) => (detallesAbiertos = e.target.open) },
         el("summary", {}, "Valores teóricos del modelo por rating"), teoricos,

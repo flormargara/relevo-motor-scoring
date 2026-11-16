@@ -1,9 +1,10 @@
 """Modelo de ML: la PD de un modelo que vive en otro repositorio (ADR 0010).
 
 Cumple ``docs/contrato-modelo-ml.md``: ``POST /v1/pd`` con CUIT, segmento, período,
-modelo y versión. El pedido queda en el crudo junto con la respuesta, así ``traducir``
-(pura) puede validar que la respuesta corresponde al pedido y que el modelo no usó datos
-posteriores al período.
+modelo y versión, una vez por cada modelo que usan las reglas (el que decide, los del
+split y los de sombra). Cada pedido queda en el crudo junto con su respuesta, así
+``traducir`` (pura) puede validar que la respuesta corresponde al pedido y que el modelo no
+usó datos posteriores al período.
 
 ``metadata`` lee ``GET /v1/modelos`` y ``verificar`` controla que una versión esté
 publicada y declare la exclusión de los CUIT reservados (ADR 0009).
@@ -42,6 +43,12 @@ def periodo_de(fecha: date) -> int:
 
 
 class ModeloML:
+    """Una consulta por evaluación que trae la PD de todos los modelos de ML que usan las reglas: el
+    que decide, los del split y los de sombra (ADR 0010). Cada respuesta queda en el snapshot.
+
+    Las variables del catálogo (``modelo_ml.pd`` y las demás) son las del modelo que decide; el
+    motor las busca en ``modelos`` según a qué modelo le tocó la solicitud."""
+
     nombre = "modelo_ml"
     variables = {
         "pd": Variable("proporción", "PD a 12 meses del modelo de ML que decide (de 0 a 1)"),
@@ -53,29 +60,37 @@ class ModeloML:
         self,
         cliente: httpx.Client,
         conexion: ConexionModelo,
-        modelo: str,
-        version: str,
+        modelos: Sequence[tuple[str, str]],
         segmento: str,
         periodo: int,
     ):
         self.cliente = cliente
         self.conexion = conexion
-        self.pedido = {"segmento": segmento, "periodo": periodo, "modelo": modelo, "version": version}
+        self.pedidos = [
+            {"segmento": segmento, "periodo": periodo, "modelo": modelo, "version": version}
+            for modelo, version in dict.fromkeys(modelos)
+        ]
 
     def consultar(self, identificacion: str, timeout: float) -> dict[str, Any]:
+        """Pide la PD a cada modelo. Si ninguno respondió (timeout, red, 5xx), la fuente está caída y se
+        reintenta; si respondió alguno, la falla de los otros queda anotada en su respuesta."""
         if not self.conexion.url:
             raise FuenteCaida(NO_CONFIGURADO)
-        pedido = {"cuit": identificacion, **self.pedido}
+        respuestas = [self._pedir({"cuit": identificacion, **pedido}, timeout) for pedido in self.pedidos]
+        if respuestas and all("error" in r for r in respuestas):
+            raise FuenteCaida("; ".join(sorted({r["error"] for r in respuestas})))
+        return {"respuestas": respuestas}
+
+    def _pedir(self, pedido: dict[str, Any], timeout: float) -> dict[str, Any]:
+        url = f"{self.conexion.url.rstrip('/')}/v1/pd"  # type: ignore[union-attr]
         try:
-            respuesta = self.cliente.post(
-                f"{self.conexion.url.rstrip('/')}/v1/pd", json=pedido, headers=self.conexion.headers(), timeout=timeout
-            )
+            respuesta = self.cliente.post(url, json=pedido, headers=self.conexion.headers(), timeout=timeout)
         except httpx.TimeoutException:
-            raise FuenteCaida(f"timeout ({timeout:g} s)") from None
+            return {"pedido": pedido, "error": f"timeout ({timeout:g} s)"}
         except httpx.HTTPError as error:
-            raise FuenteCaida(f"error de red: {type(error).__name__}") from None
+            return {"pedido": pedido, "error": f"error de red: {type(error).__name__}"}
         if respuesta.status_code >= 500:
-            raise FuenteCaida(f"HTTP {respuesta.status_code}")
+            return {"pedido": pedido, "error": f"HTTP {respuesta.status_code}"}
         try:
             cuerpo = respuesta.json()
         except ValueError:
@@ -83,32 +98,52 @@ class ModeloML:
         return {"pedido": pedido, "status": respuesta.status_code, "body": cuerpo}
 
     def traducir(self, crudo: Mapping[str, Any]) -> ResultadoFuente:
-        status, cuerpo, pedido = crudo["status"], crudo["body"], crudo["pedido"]
-        if status == 404:
+        modelos = {}
+        for respuesta in crudo["respuestas"]:
+            pedido = respuesta["pedido"]
+            modelos[f"{pedido['modelo']}@{pedido['version']}"] = _traducir_una(respuesta)
+        estados = {m["estado"] for m in modelos.values()}
+        if estados == {"no_disponible"}:
+            return NoDisponible("; ".join(f"{id}: {m['motivo']}" for id, m in modelos.items()))
+        if estados == {"sin_antecedentes"}:
             return SinAntecedentes()
-        if status != 200:
-            detalle = cuerpo.get("detail") or cuerpo.get("error") or cuerpo if isinstance(cuerpo, dict) else cuerpo
-            return NoDisponible(f"el modelo rechazó el pedido: HTTP {status} ({detalle})")
-        try:
-            pd = float(cuerpo["pd"])
-        except (KeyError, TypeError, ValueError):
-            return NoDisponible("respuesta fuera de contrato: falta la pd")
-        if not 0 <= pd <= 1:
-            return NoDisponible(f"respuesta fuera de contrato: pd {pd} fuera de [0, 1]")
-        if (cuerpo.get("modelo"), cuerpo.get("version")) != (pedido["modelo"], pedido["version"]):
-            respondido = f"{cuerpo.get('modelo')}@{cuerpo.get('version')}"
-            return NoDisponible(f"respondió {respondido} y se pidió {pedido['modelo']}@{pedido['version']}")
-        periodo_datos = cuerpo.get("periodo_datos")
-        if not isinstance(periodo_datos, int) or periodo_datos > pedido["periodo"]:
-            return NoDisponible(f"usa datos de {periodo_datos}, posteriores al período pedido ({pedido['periodo']})")
-        return Disponible(
-            {
-                "pd": pd,
-                "version": f"{pedido['modelo']}@{pedido['version']}",
-                "periodo_datos": periodo_datos,
-                "factores": list(cuerpo.get("factores") or [])[:10],
-            }
-        )
+        return Disponible({"modelos": modelos})
+
+
+def _traducir_una(respuesta: Mapping[str, Any]) -> dict[str, Any]:
+    """La respuesta de un modelo, validada contra el contrato."""
+    pedido = respuesta["pedido"]
+
+    def no_disponible(motivo: str) -> dict[str, Any]:
+        return {"estado": "no_disponible", "motivo": motivo}
+
+    if "error" in respuesta:
+        return no_disponible(respuesta["error"])
+    status, cuerpo = respuesta["status"], respuesta["body"]
+    if status == 404:
+        return {"estado": "sin_antecedentes"}
+    if status != 200:
+        detalle = cuerpo.get("detail") or cuerpo.get("error") or cuerpo if isinstance(cuerpo, dict) else cuerpo
+        return no_disponible(f"el modelo rechazó el pedido: HTTP {status} ({detalle})")
+    try:
+        pd = float(cuerpo["pd"])
+    except (KeyError, TypeError, ValueError):
+        return no_disponible("respuesta fuera de contrato: falta la pd")
+    if not 0 <= pd <= 1:
+        return no_disponible(f"respuesta fuera de contrato: pd {pd} fuera de [0, 1]")
+    if (cuerpo.get("modelo"), cuerpo.get("version")) != (pedido["modelo"], pedido["version"]):
+        respondido = f"{cuerpo.get('modelo')}@{cuerpo.get('version')}"
+        return no_disponible(f"respondió {respondido} y se pidió {pedido['modelo']}@{pedido['version']}")
+    periodo_datos = cuerpo.get("periodo_datos")
+    if not isinstance(periodo_datos, int) or periodo_datos > pedido["periodo"]:
+        return no_disponible(f"usa datos de {periodo_datos}, posteriores al período pedido ({pedido['periodo']})")
+    return {
+        "estado": "disponible",
+        "pd": pd,
+        "version": f"{pedido['modelo']}@{pedido['version']}",
+        "periodo_datos": periodo_datos,
+        "factores": list(cuerpo.get("factores") or [])[:10],
+    }
 
 
 # --- metadata y control de los CUIT reservados --------------------------------------

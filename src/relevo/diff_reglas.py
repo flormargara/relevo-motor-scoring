@@ -32,8 +32,15 @@ def diferencias(antes: Reglas, despues: Reglas) -> list[Cambio]:
     ):
         cambios += _reglas(nombre, plural, a, b)
 
-    if antes.scorecard.modelo != despues.scorecard.modelo:
-        cambios.append(Cambio("modificada", "Scorecard · modelo", antes.scorecard.modelo, despues.scorecard.modelo))
+    if _reparto(antes) != _reparto(despues):
+        que = "Scorecard · split" if antes.split or despues.split else "Scorecard · modelo"
+        cambios.append(Cambio("modificada", que, _reparto(antes), _reparto(despues)))
+    if antes.split and despues.split and _reparto(antes) == _reparto(despues) and antes.semilla != despues.semilla:
+        cambios.append(Cambio("modificada", "Scorecard · semilla del split", antes.semilla, despues.semilla))
+    sombra0, sombra1 = _sombra(antes), _sombra(despues)
+    if sombra0 != sombra1:
+        tipo = "agregada" if not sombra0 else "quitada" if not sombra1 else "modificada"
+        cambios.append(Cambio(tipo, "Scorecard · modelos en sombra", sombra0, sombra1))
     if antes.scorecard.si_no_disponible != despues.scorecard.si_no_disponible:
         cambios.append(
             Cambio(
@@ -108,6 +115,18 @@ def _decision(reglas: Reglas, rating: str) -> str:
     if rating in reglas.politica.derivar_ratings:
         return _DECISION["derivar"]
     return _DECISION["aprobar"]
+
+
+def _reparto(reglas: Reglas) -> str:
+    """El modelo que decide, o el reparto del split (``a.json 50 % · b.json 50 %``)."""
+    if not reglas.split:
+        return reglas.scorecard.modelo
+    total = sum(b.peso for b in reglas.split)
+    return " · ".join(f"{b.scorecard.modelo} {b.peso / total:.0%}".replace("%", " %") for b in reglas.split)
+
+
+def _sombra(reglas: Reglas) -> str | None:
+    return ", ".join(s.modelo for s in reglas.sombra) or None
 
 
 def _texto(valor: Any) -> str | None:

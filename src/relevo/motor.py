@@ -12,13 +12,14 @@ Invariantes:
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 from relevo import identificacion
 from relevo.condiciones import Expresion, SinDato
 from relevo.consultor import Consultor, Disponible, NoDisponible, ResultadoFuente, SinAntecedentes
 from relevo.dominio import Evaluacion, Oferta, Paso, Solicitud, Veredicto
-from relevo.reglas import PD_EXTERNA, Politica, Regla, Reglas
+from relevo.reglas import PD_EXTERNA, Politica, Regla, Reglas, Scorecard
 
 
 def evaluar(solicitud: Solicitud, reglas: Reglas, consultor: Consultor) -> Evaluacion:
@@ -51,6 +52,7 @@ class _Evaluacion:
         self.puntos: float | None = None
         self.pd: float | None = None
         self.rating: str | None = None
+        self.decisor = reglas.asignar(solicitud.cuit)  # el modelo que decide (con split, el que le tocó)
         self.variables_solicitud = {
             "cuit": identificacion.normalizar(solicitud.cuit),
             "cuit_valido": identificacion.es_valido(solicitud.cuit),
@@ -110,9 +112,17 @@ class _Evaluacion:
         self.a_derivar.append(motivo)
 
     def _scorecard(self) -> None:
-        scorecard = self.reglas.scorecard
-        if scorecard.externo:
-            return self._modelo_externo()
+        """El modelo que decide da la PD y el rating. Después se calculan los de sombra (y los otros del
+        split), aunque el que decide haya cortado la evaluación: sus PD se guardan en la traza."""
+        try:
+            if self.decisor.externo:
+                self._modelo_externo(self.decisor)
+            else:
+                self._puntos(self.decisor)
+        finally:
+            self._sombras()
+
+    def _puntos(self, scorecard: Scorecard) -> None:
         total = 0.0
         for caracteristica in scorecard.caracteristicas:
             valores: dict[str, Any] = {}
@@ -144,7 +154,7 @@ class _Evaluacion:
 
         self.puntos = total
         self.pd = scorecard.pd(total)
-        self.rating = self.reglas.rating_para(self.pd)
+        self.rating = scorecard.rating_para(self.pd)
         self._paso(
             "rating",
             "rating",
@@ -153,11 +163,11 @@ class _Evaluacion:
             pd=self.pd,
             modelo=scorecard.modelo,
             provisional=scorecard.provisional,
+            **self._split(),
         )
 
-    def _modelo_externo(self) -> None:
+    def _modelo_externo(self, scorecard: Scorecard) -> None:
         """La PD la da un modelo de ML externo (ADR 0010). Sin PD no hay rating: se deriva o se rechaza."""
-        scorecard = self.reglas.scorecard
         assert scorecard.externo is not None
         valores: dict[str, Any] = {}
         try:
@@ -173,9 +183,10 @@ class _Evaluacion:
                 _ACCION_A_VEREDICTO[scorecard.si_no_disponible],
                 f"scorecard {scorecard.externo.id}: sin PD del modelo ({error})",
             ) from None
-        self._paso("scorecard", scorecard.externo.id, "ok", valor=pd, factores=self._factores())
+        entrada = self._entrada_modelo(scorecard.externo.id, self._fuente)
+        self._paso("scorecard", scorecard.externo.id, "ok", valor=pd, factores=entrada.get("factores") or [])
         self.pd = pd
-        self.rating = self.reglas.rating_para(pd)
+        self.rating = scorecard.rating_para(pd)
         self._paso(
             "rating",
             "rating",
@@ -184,11 +195,82 @@ class _Evaluacion:
             modelo=scorecard.modelo,
             externo=scorecard.externo.id,
             provisional=scorecard.provisional,
+            **self._split(),
         )
 
-    def _factores(self) -> list[Any]:
-        resultado = self.resultados.get("modelo_ml")
-        return list(resultado.variables.get("factores") or []) if isinstance(resultado, Disponible) else []
+    def _split(self) -> dict[str, Any]:
+        """Qué modelo le tocó a la solicitud y cómo se repartió, para la traza."""
+        if not self.reglas.split:
+            return {}
+        pesos = {b.scorecard.id: b.peso for b in self.reglas.split}
+        return {"split": {"asignado": self.decisor.id, "pesos": pesos, "semilla": self.reglas.semilla}}
+
+    # --- modelos en sombra (ADR 0010) ---------------------------------------
+
+    def _sombras(self) -> None:
+        """La PD de los modelos que no deciden: los de sombra y los otros del split. Nunca cortan la
+        evaluación ni piden una fuente paga que no se haya consultado ya: si les falta un dato, queda
+        anotado en su paso."""
+        otros = [b.scorecard for b in self.reglas.split if b.scorecard is not self.decisor]
+        for scorecard in (*otros, *self.reglas.sombra):
+            try:
+                detalle = self._sombra_externa(scorecard) if scorecard.externo else self._sombra_puntos(scorecard)
+                self._paso("sombra", scorecard.id, "ok", **detalle)
+            except (SinDato, _NoEvaluable) as error:
+                resultado = "sin dato" if isinstance(error, SinDato) else "no evaluable"
+                self._paso("sombra", scorecard.id, resultado, motivo=str(error), modelo=scorecard.modelo)
+
+    def _sombra_externa(self, scorecard: Scorecard) -> dict[str, Any]:
+        assert scorecard.externo is not None
+        entrada = self._entrada_modelo(scorecard.externo.id, self._fuente_sin_costo)
+        if entrada["estado"] == "sin_antecedentes":
+            raise SinDato(f"{scorecard.externo.id}: sin antecedentes")
+        if entrada["estado"] != "disponible":
+            raise _NoEvaluable(f"{scorecard.externo.id}: {entrada.get('motivo')}")
+        pd = float(entrada["pd"])
+        return {
+            "pd": pd,
+            "rating": scorecard.rating_para(pd),
+            "modelo": scorecard.modelo,
+            "externo": scorecard.externo.id,
+            "factores": entrada.get("factores") or [],
+        }
+
+    def _sombra_puntos(self, scorecard: Scorecard) -> dict[str, Any]:
+        total, sin_dato = 0.0, []
+        for caracteristica in scorecard.caracteristicas:
+            try:
+                valor = caracteristica.expresion.evaluar(lambda f, v: self._resolver(f, v, sin_costo=True), {})
+                total += caracteristica.puntos(valor)
+            except (SinDato, _NoEvaluable, TypeError, ValueError):
+                total += caracteristica.sin_dato
+                sin_dato.append(caracteristica.nombre)
+        pd = scorecard.pd(total)
+        return {
+            "pd": pd,
+            "rating": scorecard.rating_para(pd),
+            "modelo": scorecard.modelo,
+            "puntos": total,
+            **({"sin_dato": sin_dato} if sin_dato else {}),
+        }
+
+    def _fuente_sin_costo(self, fuente: str) -> ResultadoFuente:
+        """Una fuente para un modelo en sombra: si es paga y todavía no se consultó, no se consulta."""
+        if fuente not in self.resultados and getattr(self.consultor, "es_paga", lambda f: False)(fuente):
+            raise _NoEvaluable(f"{fuente}: es paga y no se consultó (los modelos en sombra no generan costo)")
+        return self._fuente(fuente)
+
+    def _entrada_modelo(self, id: str, obtener: Callable[[str], ResultadoFuente]) -> dict[str, Any]:
+        """La respuesta de un modelo de ML dentro de la fuente ``modelo_ml``."""
+        resultado = obtener("modelo_ml")
+        if isinstance(resultado, NoDisponible):
+            raise _NoEvaluable(f"modelo_ml: {resultado.motivo}")
+        if isinstance(resultado, SinAntecedentes):
+            return {"estado": "sin_antecedentes"}
+        entrada = (resultado.variables.get("modelos") or {}).get(id)
+        if entrada is None:
+            raise _NoEvaluable(f"modelo_ml: no se consultó {id}")
+        return entrada
 
     def _politica(self) -> Oferta:
         politica = self.reglas.politica
@@ -255,10 +337,13 @@ class _Evaluacion:
         except (TypeError, ValueError) as error:
             raise _NoEvaluable(f"tipo de dato inesperado en {expresion.texto!r}: {error}") from None
 
-    def _resolver(self, fuente: str, variable: str) -> Any:
+    def _resolver(self, fuente: str, variable: str, sin_costo: bool = False) -> Any:
         if fuente == "solicitud":
             return self.variables_solicitud[variable]
-        resultado = self._fuente(fuente)
+        obtener = self._fuente_sin_costo if sin_costo else self._fuente
+        if fuente == "modelo_ml":
+            return self._variable_modelo(variable, obtener)
+        resultado = obtener(fuente)
         if isinstance(resultado, NoDisponible):
             raise _NoEvaluable(f"{fuente}: {resultado.motivo}")
         if variable == "sin_antecedentes":
@@ -271,6 +356,21 @@ class _Evaluacion:
         if valor is None:
             raise SinDato(f"{fuente}.{variable}: sin dato")
         return valor
+
+    def _variable_modelo(self, variable: str, obtener: Callable[[str], ResultadoFuente]) -> Any:
+        """``modelo_ml.<variable>`` es siempre del modelo que decide para esta solicitud."""
+        if self.decisor.externo is None:
+            raise _NoEvaluable("modelo_ml: el modelo que decide no es de ML")
+        entrada = self._entrada_modelo(self.decisor.externo.id, obtener)
+        if variable == "sin_antecedentes":
+            return entrada["estado"] == "sin_antecedentes"
+        if entrada["estado"] == "sin_antecedentes":
+            raise SinDato(f"modelo_ml ({self.decisor.externo.id}): sin antecedentes")
+        if entrada["estado"] != "disponible":
+            raise _NoEvaluable(f"modelo_ml ({self.decisor.externo.id}): {entrada.get('motivo')}")
+        if entrada.get(variable) is None:
+            raise SinDato(f"modelo_ml.{variable}: sin dato")
+        return entrada[variable]
 
     def _fuente(self, fuente: str) -> ResultadoFuente:
         if fuente not in self.resultados:
