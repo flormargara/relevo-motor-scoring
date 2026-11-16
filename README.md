@@ -26,6 +26,27 @@ python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 Abrir http://localhost:8000. La base queda en `data/relevo.sqlite` (cambiarla con `RELEVO_DB`). Al arrancar se cargan los casos de `config/casos_precargados.yaml` y, si existe, de `data/casos_precargados.local.yaml` (casos con CUIL de personas, fuera de git); se evalúan con **Evaluar pendientes**.
 
+## API del motor
+
+La app expone el motor como API JSON en `/api/v1` (ADR 0008). La documentación interactiva está en http://localhost:8000/docs y el contrato en `/openapi.json`. Las pantallas no forman parte de ese contrato.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `POST` | `/api/v1/evaluaciones` | Da de alta una solicitud, la evalúa (consulta las fuentes en vivo) y devuelve la evaluación |
+| `GET` | `/api/v1/evaluaciones/{id}` | Una evaluación guardada |
+| `GET` | `/api/v1/solicitudes/{id}/evaluaciones` | El historial de evaluaciones de una solicitud |
+| `POST` | `/api/v1/solicitudes/{id}/evaluaciones` | Vuelve a evaluar con las reglas vigentes |
+| `GET` | `/api/v1/reglas/{flujo}` | Reglas publicadas, ratings del modelo y catálogo de variables |
+
+```bash
+curl -s localhost:8000/api/v1/evaluaciones -H 'content-type: application/json' -d '{
+  "cuit": "30-71234567-1", "segmento": "pyme", "monto": 10000000, "plazo_meses": 12,
+  "documentos": {"ventas_anuales": 240000000}
+}'
+```
+
+Las solicitudes de la API aparecen en la Bandeja como las demás. **No tiene autenticación**: sirve para uso local y pruebas, no para exponerla a terceros.
+
 ## Agentes
 
 Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo y responden preguntas en la pantalla del caso. Nunca deciden: si fallan, el veredicto sale igual.
