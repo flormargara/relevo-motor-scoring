@@ -9,9 +9,10 @@ from adapters_falsos import ClaudeFalso, FabricaFalsa
 from fastapi.testclient import TestClient
 
 from conftest import BASE_PYME, CUIL_MONOTRIBUTISTA, CUIT_PYME
-from relevo.app import crear_app, pesos, porcentaje
+from relevo.app import crear_app
 from relevo.consultor import SinAntecedentes
 from relevo.consultor_real import cargar_config_fuentes
+from relevo.presentacion import pesos, porcentaje
 from relevo.repositorio import Repositorio
 from relevo.servicio import Servicio
 

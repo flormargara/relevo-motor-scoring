@@ -83,10 +83,10 @@ class Servicio:
         with self._lock:
             if self._cliente is None:
                 self._cliente = httpx.Client()
-        # Los casos precargados usan la identidad simulada; el alta manual usa la fecha declarada.
-        # En producción, RENAPER ocupa el lugar de IdentidadDeclarada con las mismas variables.
+        # Los casos precargados usan la identidad simulada; el alta manual y la de la API usan la
+        # fecha declarada. En producción, RENAPER ocupa el lugar de IdentidadDeclarada con las mismas variables.
         identidad = None
-        if guardada.origen == "manual":
+        if guardada.origen != "precargado":
             identidad = IdentidadDeclarada(guardada.fecha_nacimiento, hoy=self.ahora_fecha)
         return adapters_por_defecto(self._cliente, documentos=guardada.documentos, identidad=identidad)
 

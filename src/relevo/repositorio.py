@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS solicitudes (
     monto REAL NOT NULL,
     plazo_meses INTEGER NOT NULL,
     documentos TEXT,             -- JSON con los campos extraídos, o NULL
-    origen TEXT NOT NULL,        -- precargado | manual
+    origen TEXT NOT NULL,        -- precargado | manual | api
     consentimiento INTEGER NOT NULL DEFAULT 0,
     creada_en TEXT NOT NULL,
     fecha_nacimiento TEXT        -- ISO, declarada en el alta, o NULL
