@@ -90,6 +90,22 @@ class VersionesReglas:
         datos = {"flujo": flujo, "version": vigente.version + 1, **_sin_identidad(contenido)}
         return diferencias(vigente, reglas_desde_dict(datos, self.directorio_modelos))
 
+    def candidata(self, flujo: str, contenido: dict[str, Any]) -> tuple[Reglas, list[Cambio]]:
+        """Valida ``contenido`` como lo haría publicar (formato y catálogo) sin guardar nada, y
+        devuelve las reglas y sus cambios respecto de la vigente. La usa el simulador."""
+        nueva = self.reglas(flujo).version + 1
+        datos = {"flujo": flujo, "version": nueva, **_sin_identidad(contenido)}
+        texto = yaml.safe_dump(datos, allow_unicode=True, sort_keys=False)
+        reglas = self._parsear(texto, flujo, nueva, f"{flujo} (candidata)")
+        return reglas, diferencias(self.reglas(flujo), reglas)
+
+    def contenido(self, flujo: str, version: int | None = None) -> dict[str, Any]:
+        """El contenido de una versión publicada (la vigente si no se pide), sin flujo ni versión."""
+        guardada = self.repositorio.version_reglas(flujo, version)
+        if guardada is None:
+            raise ReglasInvalidas(f"no hay reglas para el flujo {flujo!r}")
+        return _sin_identidad(yaml.safe_load(guardada.contenido))
+
     # --- borrador: uno por flujo, compartido, sin validar hasta publicar ------
 
     def guardar_borrador(self, flujo: str, contenido: dict[str, Any], base: int) -> None:

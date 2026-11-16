@@ -5,17 +5,20 @@ repositorio. Mientras viven acá, estas reglas mantienen la frontera para que ex
 después sea mecánico:
 
 - ``lectura_documentos`` no importa nada de Relevo salvo el seam ``clientes_claude``.
-- Nadie importa ``chat`` salvo la capa que compone la app (``servicio`` y ``app``).
-- ``monitoreo`` es parte del chat: solo lo importan el chat y la composición.
+- El chat son ``chat``, ``chat_datos``, ``monitoreo`` y ``simulador``. Fuera de ellos, solo
+  los importa la capa que compone la app (``servicio`` y ``app``).
 """
 
 import ast
 from pathlib import Path
 
+import pytest
+
 import relevo
 
 RAIZ = Path(relevo.__file__).parent
 COMPOSICION = {"relevo.servicio", "relevo.app"}
+CHAT = {"relevo.chat", "relevo.chat_datos", "relevo.monitoreo", "relevo.simulador"}
 
 
 def _modulo(archivo: Path) -> str:
@@ -50,16 +53,11 @@ def test_lectura_de_documentos_no_depende_del_motor():
     assert ajenos == set()
 
 
-def test_solo_la_composicion_importa_el_chat():
-    quienes = {modulo for modulo, importados in _grafo().items() if _toca(importados, "relevo.chat")}
+@pytest.mark.parametrize("modulo", sorted(CHAT))
+def test_solo_la_composicion_y_el_chat_importan_el_chat(modulo):
+    quienes = {m for m, importados in _grafo().items() if _toca(importados, modulo)}
 
-    assert quienes <= COMPOSICION
-
-
-def test_solo_el_chat_y_la_composicion_importan_el_monitoreo():
-    quienes = {modulo for modulo, importados in _grafo().items() if _toca(importados, "relevo.monitoreo")}
-
-    assert quienes <= COMPOSICION | {"relevo.chat"}
+    assert quienes <= COMPOSICION | CHAT
 
 
 def test_el_test_ve_los_imports_reales():
@@ -67,5 +65,5 @@ def test_el_test_ve_los_imports_reales():
     grafo = _grafo()
 
     assert _toca(grafo["relevo.servicio"], "relevo.chat")
-    assert _toca(grafo["relevo.chat"], "relevo.monitoreo")
+    assert _toca(grafo["relevo.chat_datos"], "relevo.simulador")
     assert _toca(grafo["relevo.fuentes.documentos"], "relevo.lectura_documentos")

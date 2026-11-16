@@ -4,7 +4,9 @@ Arma la solicitud, llama a ``evaluar`` con un ``ConsultorReal`` cuyo almacén de
 snapshots es el repositorio, y guarda el resultado. Los documentos subidos pasan por el
 agente documental antes de evaluar; el informe y el chat se piden aparte y nunca tocan
 el veredicto. El monitoreo cruza las evaluaciones otorgadas con la cartera de la entidad
-(``FuenteDeCartera``), que se lee en cada consulta.
+(``FuenteDeCartera``), que se lee en cada consulta. El servicio es también la fuente de
+datos de "Chat with your data" (``chat_datos.DatosDelChat``): monitoreo, simulador y
+evaluaciones, siempre de solo lectura.
 """
 
 from __future__ import annotations
@@ -22,9 +24,9 @@ from typing import Any
 import httpx
 import yaml
 
-from relevo import chat, identificacion, lectura_documentos, monitoreo
+from relevo import chat, chat_datos, identificacion, lectura_documentos, monitoreo, simulador
 from relevo.cartera import CarteraInvalida, FuenteDeCartera
-from relevo.catalogo import flujo_de_originacion
+from relevo.catalogo import catalogo, flujo_de_originacion, flujos
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
 from relevo.dominio import Solicitud
@@ -32,8 +34,8 @@ from relevo.fuentes import AdapterFuente
 from relevo.fuentes.documentos import variables_documentos
 from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.motor import evaluar
-from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas
-from relevo.repositorio import AlmacenSqlite, Repositorio, SolicitudGuardada
+from relevo.reglas import DIRECTORIO_MODELOS, DIRECTORIO_REGLAS, Reglas, ReglasInvalidas
+from relevo.repositorio import AlmacenSqlite, EvaluacionGuardada, Repositorio, SolicitudGuardada
 from relevo.versiones_reglas import VersionesReglas
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -49,6 +51,10 @@ ArchivoSubido = tuple[str, bytes]  # nombre original y contenido
 
 class SolicitudInvalida(ValueError):
     pass
+
+
+class BorradorExistente(ValueError):
+    """Ya hay un borrador sin publicar y no se pidió reemplazarlo."""
 
 
 class ConsentimientoRequerido(SolicitudInvalida):
@@ -216,14 +222,85 @@ class Servicio:
             raise CarteraInvalida("no hay cartera configurada")
         return monitoreo.calcular(self.repositorio.otorgadas(), self.cartera.registros())
 
-    def preguntar_cartera(self, historial: Sequence[tuple[str, str]], pregunta: str) -> str:
-        """Responde una pregunta sobre el monitoreo. ``historial`` son pares (rol, texto): la
-        conversación no se guarda, vive en la pantalla."""
+    # --- Chat with your data (chat_datos.DatosDelChat) ----------------------
+
+    def preguntar_datos(self, historial: Sequence[Mapping[str, Any]], pregunta: str) -> chat_datos.Respuesta:
+        """Responde una pregunta sobre la base. ``historial`` son los turnos previos (rol, texto y
+        el pedido que resolvió cada respuesta): la conversación no se guarda, vive en la pantalla."""
         pregunta = pregunta.strip()
         if not pregunta:
             raise SolicitudInvalida("la pregunta está vacía")
-        turnos = [chat.Turno(rol, texto) for rol, texto in historial]
-        return chat.responder_cartera(self.monitoreo(), turnos, pregunta, self.cliente_claude)
+        turnos = [
+            chat_datos.Turno(str(t["rol"]), str(t["texto"]), t.get("plan") if isinstance(t.get("plan"), dict) else None)
+            for t in historial
+        ]
+        return chat_datos.responder(pregunta, turnos, self, self.cliente_claude)
+
+    def flujos(self) -> dict[str, str]:
+        return {id: flujo.nombre for id, flujo in flujos().items()}
+
+    def evaluaciones(self) -> list[EvaluacionGuardada]:
+        return self.repositorio.ultimas_evaluaciones()
+
+    def contexto_reglas(self, flujo: str) -> str:
+        reglas = self.versiones.reglas(flujo)
+        contenido = yaml.safe_dump(self.versiones.contenido(flujo), allow_unicode=True, sort_keys=False)
+        variables = "\n".join(f"- {v.nombre} ({v.tipo}): {v.descripcion}" for v in catalogo(flujo))
+        borrador = "hay un borrador sin publicar" if self.versiones.borrador(flujo) else "no hay borrador"
+        return (
+            f"Flujo {flujo} ({flujos()[flujo].nombre}), reglas vigentes {reglas.id} ({borrador}):\n{contenido}\n"
+            f"Catálogo de variables de {flujo}:\n{variables}"
+        )
+
+    def simular(
+        self, flujo: str, origen: str, operaciones: Sequence[Mapping], version: int | None = None
+    ) -> simulador.Simulacion:
+        """El motor con reglas candidatas sobre las evaluaciones guardadas del flujo, sin consultar fuentes."""
+        candidata, cambios = self.versiones.candidata(
+            flujo, self._contenido_candidato(flujo, origen, operaciones, version)
+        )
+        if not cambios:
+            raise chat_datos.SinCambios("las reglas candidatas son iguales a las vigentes")
+        try:
+            registros = self.cartera.registros() if self.cartera else []
+        except CarteraInvalida:
+            registros = []  # sin cartera se simula igual, sin default observado
+        return simulador.simular(
+            flujo,
+            self.repositorio.ultimas_evaluaciones(flujos()[flujo].segmento),
+            self.versiones.reglas(flujo),
+            candidata,
+            cambios,
+            self.repositorio.otorgadas(),
+            registros,
+        )
+
+    def guardar_borrador_simulado(self, flujo: str, operaciones: Sequence[Mapping], reemplazar: bool = False) -> None:
+        """Guarda como borrador del editor las reglas vigentes con los cambios simulados. No publica."""
+        contenido = simulador.aplicar_cambios(self.versiones.contenido(flujo), operaciones)
+        self.versiones.candidata(flujo, contenido)  # valida antes de guardar
+        if self.versiones.borrador(flujo) is not None and not reemplazar:
+            raise BorradorExistente(f"ya hay un borrador de {flujos()[flujo].nombre} sin publicar")
+        self.versiones.guardar_borrador(flujo, contenido, self.versiones.reglas(flujo).version)
+
+    def _contenido_candidato(
+        self, flujo: str, origen: str, operaciones: Sequence[Mapping], version: int | None
+    ) -> dict[str, Any]:
+        if flujo not in flujos():
+            raise ReglasInvalidas(f"no hay un flujo {flujo!r}")
+        match origen:
+            case "cambios":
+                return simulador.aplicar_cambios(self.versiones.contenido(flujo), operaciones)
+            case "borrador":
+                borrador = self.versiones.borrador(flujo)
+                if borrador is None:
+                    raise ReglasInvalidas(f"no hay un borrador de {flujos()[flujo].nombre}")
+                return borrador.contenido
+            case "version":
+                if version is None:
+                    raise ReglasInvalidas("falta la versión a simular")
+                return self.versiones.contenido(flujo, version)
+        raise ReglasInvalidas(f"origen de reglas desconocido: {origen!r}")
 
     def evaluar(self, solicitud_id: str) -> int:
         guardada = self.repositorio.solicitud(solicitud_id)

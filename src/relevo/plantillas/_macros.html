@@ -1,0 +1,36 @@
+{# Macros de tablas de cartera: las usan Monitoreo y los resultados de Chat with your data. #}
+{% set ESTADOS = {
+  "verde": ("en línea", "ok"),
+  "amarillo": ("desvío", "deriva"),
+  "rojo": ("subestima", "rechaza"),
+  "sobreestima": ("sobreestima", ""),
+  "pocos-datos": ("pocos datos", ""),
+} %}
+{% set NOMBRES = {"pyme": "PyME", "monotributista": "Monotributista"} %}
+{% macro estado(g) %}{% set e = ESTADOS[g.estado] %}<span class="chip {{ e[1] }}">{{ e[0] }}</span>{% endmacro %}
+{% macro oe(g) %}{% if g.ratio is not none %}<strong>{{ g.ratio | decimal }}</strong><div class="suave" style="font-size: 12px;">{{ g.ic[0] | decimal }}–{{ g.ic[1] | decimal }}</div>{% else %}—{% endif %}{% endmacro %}
+{% macro tabla(grupos, titulo_clave) %}
+  <table>
+    <thead><tr>
+      <th>{{ titulo_clave }}</th><th class="num">Créditos</th><th class="num">Meses obs.</th><th class="num">PD 12 m</th>
+      <th class="num">Esperados</th><th class="num">Observados</th><th class="num">O/E (IC 95%)</th><th class="num">Mora temprana</th><th>Estado</th>
+    </tr></thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr>
+        <td><strong>{{ NOMBRES.get(g.clave, g.clave) }}</strong></td>
+        <td class="num">{{ g.creditos | numero }}</td>
+        {% if g.creditos %}
+        <td class="num">{{ g.meses_promedio | decimal(1) }}</td>
+        <td class="num">{{ g.pd_12m | porcentaje(1) }}</td>
+        <td class="num">{{ g.esperados | decimal(1) }}</td>
+        <td class="num">{{ g.observados | numero }}</td>
+        {% else %}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>{% endif %}
+        <td class="num">{{ oe(g) }}</td>
+        <td class="num">{{ g.tasa_mora_temprana | porcentaje(1) }}</td>
+        <td>{{ estado(g) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}

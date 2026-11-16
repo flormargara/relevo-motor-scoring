@@ -13,7 +13,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fondo); color: var(--texto); }
   header.barra { background: var(--superficie); border-bottom: 1px solid var(--borde); }
-  header.barra .contenido { display: flex; gap: 24px; align-items: center; padding-block: 12px; }
+  header.barra .contenido { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: center; padding-block: 12px; }
   header.barra a { color: var(--suave); text-decoration: none; font-weight: 500; }
   header.barra a.activo, header.barra a:hover { color: var(--texto); }
   .marca { font-weight: 700; color: var(--texto) !important; margin-right: 8px; }
@@ -95,6 +95,7 @@
   <a href="/nueva" class="{{ 'activo' if seccion == 'nueva' }}">Nueva solicitud</a>
   <a href="/" class="{{ 'activo' if seccion == 'historico' }}">Histórico</a>
   <a href="/monitoreo" class="{{ 'activo' if seccion == 'monitoreo' }}">Monitoreo</a>
+  <a href="/chat" class="{{ 'activo' if seccion == 'chat' }}">Chat with your data</a>
   <a href="/reglas" class="{{ 'activo' if seccion == 'backoffice' }}">Backoffice</a>
 </div></header>
 <main class="contenido">

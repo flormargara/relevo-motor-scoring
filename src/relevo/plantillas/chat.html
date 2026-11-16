@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% set seccion = "chat" %}
+{% block titulo %}Chat with your data{% endblock %}
+{% block contenido %}
+<h1>Chat with your data</h1>
+<p class="sub">Preguntá por las evaluaciones, la cartera o qué pasaría con otras reglas. Los números los calcula el motor; el agente los explica. Las simulaciones usan los datos ya consultados y nunca cambian las reglas vigentes.</p>
+
+<section class="tarjeta" id="chat">
+  <div id="mensajes">
+    <div id="vacio" class="suave">
+      <p style="margin-top: 0;">Algunas preguntas para empezar:</p>
+      <div class="acciones" id="sugerencias">
+        <button type="button">¿Qué rating está peor calibrado?</button>
+        <button type="button">¿Cuáles son los motivos de rechazo más frecuentes?</button>
+        <button type="button">¿Qué pasa si en PyME rechazo también el rating D?</button>
+        <button type="button">¿Y si en Monotributista dejo de rechazar el rating E?</button>
+      </div>
+    </div>
+  </div>
+  <form id="preguntar" style="margin-top: 12px;">
+    <textarea name="pregunta" rows="3" required placeholder="¿Qué pasa si en PyME subo la antigüedad mínima a 2 años?">{{ pregunta }}</textarea>
+    <div class="acciones" style="margin-top: 8px;"><button class="primario">Preguntar</button><button type="button" id="limpiar">Limpiar conversación</button></div>
+  </form>
+</section>
+<p class="suave" style="font-size: 13px;">La conversación no se guarda: vive en esta pestaña del navegador.</p>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  details.resultado { margin-top: 10px; border-top: 1px solid var(--borde); padding-top: 8px; }
+  details.resultado table { font-size: 13px; }
+  .mensaje .borrador { margin-top: 10px; white-space: normal; }
+  .mensaje .tabla { white-space: normal; overflow-x: auto; }
+  .mensaje .tabla td:first-child { min-width: 9em; }
+</style>
+<script>
+  (() => {
+    const form = document.getElementById("preguntar");
+    const lista = document.getElementById("mensajes");
+    const vacio = document.getElementById("vacio");
+    const CLAVE = "relevo-chat-datos";
+    const FLUJOS = {{ flujos | tojson }};
+    let historial = [];
+    try { historial = JSON.parse(sessionStorage.getItem(CLAVE) || "[]"); } catch { historial = []; }
+    const guardar = () => { try { sessionStorage.setItem(CLAVE, JSON.stringify(historial)); } catch {} };
+
+    const mostrar = (turno, clase = turno.rol) => {
+      vacio.hidden = true;
+      const div = document.createElement("div");
+      div.className = `mensaje ${clase}`;
+      const quien = document.createElement("div");
+      quien.className = "suave";
+      quien.textContent = turno.rol === "analista" ? "Analista" : "Agente";
+      div.append(quien, document.createTextNode(turno.texto));
+      if (turno.tabla) {
+        const tabla = document.createElement("div");
+        tabla.className = "tabla";
+        tabla.innerHTML = turno.tabla;  // HTML que arma el servidor desde los datos, ya escapado
+        div.append(tabla);
+      }
+      if (turno.borrador) div.append(botonBorrador(turno.borrador));
+      lista.append(div);
+      div.scrollIntoView({ block: "nearest" });
+      return div;
+    };
+
+    const botonBorrador = (borrador) => {
+      const caja = document.createElement("div");
+      caja.className = "borrador acciones";
+      const boton = document.createElement("button");
+      boton.type = "button";
+      boton.textContent = `Guardar como borrador de ${FLUJOS[borrador.flujo] || borrador.flujo}`;
+      const estado = document.createElement("span");
+      estado.className = "suave";
+      estado.style.alignSelf = "center";
+      boton.addEventListener("click", async () => {
+        const enviar = (reemplazar) => fetch("/chat/borrador", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...borrador, reemplazar }),
+        });
+        boton.disabled = true;
+        try {
+          let r = await enviar(false);
+          let datos = await r.json();
+          if (r.status === 409 && datos.existe) {
+            if (!confirm(`${datos.error}. ¿Reemplazarlo con estos cambios?`)) { boton.disabled = false; return; }
+            r = await enviar(true);
+            datos = await r.json();
+          }
+          if (!r.ok) throw new Error(datos.error || "no se pudo guardar");
+          estado.innerHTML = "";
+          estado.append("Guardado como borrador. No se publicó: ");
+          const enlace = document.createElement("a");
+          enlace.href = datos.url;
+          enlace.textContent = "revisalo en Backoffice";
+          estado.append(enlace, ".");
+        } catch (error) {
+          estado.textContent = error.message;
+          boton.disabled = false;
+        }
+      });
+      caja.append(boton, estado);
+      return caja;
+    };
+
+    historial.forEach((t) => mostrar(t));
+
+    const preguntar = async (pregunta) => {
+      const boton = form.querySelector("button.primario");
+      boton.disabled = true; boton.textContent = "Pensando…";
+      mostrar({ rol: "analista", texto: pregunta });
+      try {
+        const r = await fetch("/chat/preguntar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pregunta, historial: historial.map(({ rol, texto, plan }) => ({ rol, texto, plan })) }),
+        });
+        const datos = await r.json();
+        if (!r.ok) throw new Error(datos.error || "no se pudo responder");
+        const respuesta = { rol: "agente", texto: datos.respuesta, plan: datos.plan, tabla: datos.tabla, borrador: datos.borrador };
+        mostrar(respuesta);
+        historial.push({ rol: "analista", texto: pregunta }, respuesta);
+        guardar();
+        form.elements.pregunta.value = "";
+      } catch (error) {
+        mostrar({ rol: "agente", texto: error.message }, "agente aviso");
+      } finally {
+        boton.disabled = false; boton.textContent = "Preguntar";
+      }
+    };
+
+    form.addEventListener("submit", (evento) => {
+      evento.preventDefault();
+      const pregunta = form.elements.pregunta.value.trim();
+      if (pregunta) preguntar(pregunta);
+    });
+    document.querySelectorAll("#sugerencias button").forEach((b) =>
+      b.addEventListener("click", () => preguntar(b.textContent))
+    );
+    document.getElementById("limpiar").addEventListener("click", () => {
+      historial = []; guardar();
+      lista.querySelectorAll(".mensaje").forEach((m) => m.remove());
+      vacio.hidden = false;
+    });
+  })();
+</script>
+{% endblock %}
