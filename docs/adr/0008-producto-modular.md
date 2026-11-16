@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # El producto se vende completo o por módulos, cada uno con API y con pantalla
