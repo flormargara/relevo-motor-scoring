@@ -93,4 +93,20 @@ WHERE NOT (('0x' || left(md5(CAST(cuit AS VARCHAR)), 8))::UBIGINT % 100 < 5)
 }
 ```
 
+Relevo hace un `POST /v1/pd` por cada modelo que nombran las reglas: el que decide, los del split y los de sombra. Si un modelo falla y otro responde, la falla queda anotada solo para ese modelo.
+
 Las reglas lo usan como a cualquier scorecard: `scorecard: {modelo: pyme-gbm.2026-11.json, si_no_disponible: derivar}`. Si el modelo no responde o no tiene datos del CUIT, no hay PD y la evaluación se deriva o se rechaza, según `si_no_disponible`.
+
+Con split y sombra:
+
+```yaml
+scorecard:
+  split:
+    - {modelo: pyme-gbm.2026-11.json, peso: 50}
+    - {modelo: pyme-gbm.2026-12.json, peso: 50}
+  semilla: experimento-diciembre   # opcional; por defecto sale de los modelos del split
+  sombra: [pyme.v2.json]           # se calculan y se guardan, no deciden
+  si_no_disponible: derivar
+```
+
+Los modelos del split tienen que tener los mismos ratings, porque la política decide por rating. Los de sombra pueden tener otros.

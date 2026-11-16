@@ -35,8 +35,17 @@ def http():
     return TestClient(crear_app())
 
 
-def _adapter(http, version="1", periodo=202605, url=URL):
-    return ModeloML(http, ConexionModelo(url), "pyme-prueba", version, "pyme", periodo)
+def _adapter(http, *versiones, periodo=202605, url=URL):
+    return ModeloML(http, ConexionModelo(url), [("pyme-prueba", v) for v in versiones or ("1",)], "pyme", periodo)
+
+
+def _modelos(entradas):
+    """La fuente modelo_ml como la ve el motor: una entrada por modelo consultado (modelo@versión)."""
+    return Disponible({"modelos": entradas})
+
+
+def _ok(pd, version="1", factores=()):
+    return {"estado": "disponible", "pd": pd, "version": f"pyme-prueba@{version}", "factores": list(factores)}
 
 
 def _consultar(adapter, cuit=CUIT_CON_DATOS):
@@ -55,18 +64,34 @@ def test_la_fuente_trae_pd_version_y_factores(http):
     resultado = _consultar(_adapter(http))
 
     assert isinstance(resultado, Disponible)
-    assert 0 < resultado.variables["pd"] < 1
-    assert resultado.variables["version"] == "pyme-prueba@1" and resultado.variables["periodo_datos"] == 202605
-    factores = resultado.variables["factores"]
+    entrada = resultado.variables["modelos"]["pyme-prueba@1"]
+    assert entrada["estado"] == "disponible" and 0 < entrada["pd"] < 1
+    assert entrada["version"] == "pyme-prueba@1" and entrada["periodo_datos"] == 202605
+    factores = entrada["factores"]
     assert factores and [abs(f["aporte"]) for f in factores] == sorted(
         (abs(f["aporte"]) for f in factores), reverse=True
     )
 
 
-def test_el_crudo_guarda_el_pedido(http):
-    crudo = _adapter(http).consultar(CUIT_CON_DATOS, timeout=5)
+def test_una_consulta_trae_todos_los_modelos(http):
+    resultado = _consultar(_adapter(http, "1", "2"))
 
-    assert crudo["pedido"] == {
+    v1, v2 = (resultado.variables["modelos"][f"pyme-prueba@{v}"] for v in "12")
+    assert v1["estado"] == v2["estado"] == "disponible" and v1["pd"] != v2["pd"]
+
+
+def test_si_un_modelo_falla_los_otros_siguen(http):
+    resultado = _consultar(_adapter(http, "1", "9"))
+
+    assert resultado.variables["modelos"]["pyme-prueba@1"]["estado"] == "disponible"
+    falla = resultado.variables["modelos"]["pyme-prueba@9"]
+    assert falla["estado"] == "no_disponible" and "HTTP 400" in falla["motivo"]
+
+
+def test_el_crudo_guarda_el_pedido(http):
+    (respuesta,) = _adapter(http).consultar(CUIT_CON_DATOS, timeout=5)["respuestas"]
+
+    assert respuesta["pedido"] == {
         "cuit": CUIT_CON_DATOS,
         "segmento": "pyme",
         "periodo": 202605,
@@ -80,7 +105,7 @@ def test_404_es_sin_antecedentes(http):
 
 
 def test_una_version_que_no_sirve_es_no_disponible_sin_reintentar(http):
-    resultado = _consultar(_adapter(http, version="9"))
+    resultado = _consultar(_adapter(http, "9"))
 
     assert isinstance(resultado, NoDisponible) and "HTTP 400" in resultado.motivo
 
@@ -177,7 +202,7 @@ def test_con_modelo_externo_no_se_puede_seguir_sin_pd(versiones):
 
 def test_el_motor_usa_la_pd_del_modelo(versiones):
     factores = [{"variable": "peor_situacion_12m", "valor": 1, "aporte": -0.4}]
-    consultor = armar_consultor(BASE_PYME, modelo_ml={"pd": 0.07, "version": "pyme-prueba@1", "factores": factores})
+    consultor = armar_consultor(BASE_PYME, modelo_ml=_modelos({"pyme-prueba@1": _ok(0.07, factores=factores)}))
 
     evaluacion = evaluar(solicitud_pyme(), _con_modelo(versiones), consultor)
 
@@ -237,7 +262,7 @@ def test_el_servicio_consulta_el_modelo_con_el_periodo_anterior(http):
 
     assert evaluacion.version_reglas == "pyme.v4" and evaluacion.pd is not None
     snapshot = next(s for s in evaluacion.snapshots if s.fuente == "modelo_ml")
-    assert snapshot.crudo["pedido"]["periodo"] == 202605 and snapshot.crudo["pedido"]["version"] == "1"
+    assert snapshot.crudo["respuestas"][0]["pedido"]["periodo"] == 202605
 
 
 def test_avisos_del_modelo_en_backoffice(http):
@@ -263,7 +288,9 @@ def test_la_traza_muestra_la_pd_del_modelo(versiones):
     from relevo.presentacion import flujo
 
     reglas = _con_modelo(versiones)
-    con_pd = evaluar(solicitud_pyme(), reglas, armar_consultor(BASE_PYME, modelo_ml={"pd": 0.07}))
+    con_pd = evaluar(
+        solicitud_pyme(), reglas, armar_consultor(BASE_PYME, modelo_ml=_modelos({"pyme-prueba@1": _ok(0.07)}))
+    )
     sin_pd = evaluar(solicitud_pyme(), reglas, armar_consultor(BASE_PYME, modelo_ml=NoDisponible("caído")))
 
     scorecard = {e.clave: (e.estado, e.resumen) for e in flujo(con_pd, reglas)}["scorecard"]

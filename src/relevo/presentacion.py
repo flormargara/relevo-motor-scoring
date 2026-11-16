@@ -239,6 +239,7 @@ ETAPAS = (
     ("derivacion", "Derivaciones"),
     ("scorecard", "Scorecard"),
     ("rating", "Rating"),
+    ("sombra", "Modelos en sombra"),
     ("politica", "Política"),
     ("veredicto", "Veredicto"),
 )
@@ -271,6 +272,8 @@ def flujo(evaluacion: Evaluacion, reglas: Reglas | None = None) -> list[Etapa]:
     for clave, nombre in ETAPAS:
         pasos = [p for p in evaluacion.traza if p.etapa == clave]
         items = tuple(Item(p.regla, descripciones.get(p.regla, ""), p.resultado, p) for p in pasos)
+        if not pasos and clave == "sombra":
+            continue  # solo aparece si las reglas tienen modelos en sombra o split (ADR 0010)
         if not pasos:
             etapas.append(Etapa(clave, nombre, "no-alcanzada", "no se llegó: ya estaba decidida", items))
             continue
@@ -310,9 +313,19 @@ def _estado(clave: str, pasos: list[Paso], evaluacion: Evaluacion) -> tuple[str,
             faltan = problemas + sin_dato
             resumen = f"{numero(total)} puntos" + (f" · {faltan} sin dato" if faltan else "")
             return ("alerta" if faltan else "ok"), resumen
+        case "sombra":
+            partes = [
+                f"{p.regla}: {p.detalle.get('rating')} · PD {porcentaje(p.detalle.get('pd'))}"
+                if p.resultado == "ok"
+                else f"{p.regla}: {p.resultado}"
+                for p in pasos
+            ]
+            return ("alerta" if problemas + sin_dato else "ok"), " | ".join(partes)
         case "rating":
             paso = pasos[-1]
             resumen = f"{paso.resultado} · PD {porcentaje(paso.detalle.get('pd'))}"
+            if split := paso.detalle.get("split"):
+                resumen += f" · split: le tocó {split['asignado']}"
             politica = {p.resultado for p in evaluacion.traza if p.etapa == "politica" and p.regla == "rating"}
             if "rechaza" in politica:
                 return "corta", resumen

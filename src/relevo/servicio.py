@@ -313,12 +313,11 @@ class Servicio:
         guardada = self.repositorio.solicitud(solicitud_id)
         reglas = self.reglas(flujo_de_originacion(guardada.solicitud.segmento).id)
         adapters = dict(self.adapters(guardada))
-        if reglas.scorecard.externo and "modelo_ml" not in adapters:
+        if reglas.modelos_externos and "modelo_ml" not in adapters:
             adapters["modelo_ml"] = ModeloML(
                 self._http(),
                 self.conexion_modelo,
-                reglas.scorecard.externo.modelo,
-                reglas.scorecard.externo.version,
+                [(m.modelo, m.version) for m in reglas.modelos_externos],
                 guardada.solicitud.segmento,
                 periodo_de(self.ahora_fecha()),
             )
@@ -388,9 +387,9 @@ class Servicio:
     def avisos_modelo(self, flujo: str) -> list[str]:
         """Problemas de los modelos de ML externos que usan las reglas vigentes o el borrador: que el
         servicio no publique la versión o que no declare la exclusión de los CUIT reservados (ADR 0009)."""
-        nombres = [self.reglas(flujo).scorecard.modelo]
+        nombres = _modelos_del_scorecard(self.versiones.contenido(flujo).get("scorecard"))
         if (borrador := self.versiones.borrador(flujo)) is not None:
-            nombres.append(str((borrador.contenido.get("scorecard") or {}).get("modelo", "")))
+            nombres += _modelos_del_scorecard(borrador.contenido.get("scorecard"))
         externos = {}
         for nombre in nombres:
             archivo = DIRECTORIO_MODELOS / nombre
@@ -412,6 +411,17 @@ class Servicio:
         texto = self.repositorio.version_reglas(flujo, reglas.version).contenido
         modelo = json.loads((DIRECTORIO_MODELOS / reglas.scorecard.modelo).read_text(encoding="utf-8"))
         return reglas, texto, modelo.get("metricas")
+
+
+def _modelos_del_scorecard(scorecard: Any) -> list[str]:
+    """Los archivos de modelo que nombra la sección scorecard de unas reglas: el que decide, los del
+    split y los de sombra. Tolera un borrador a medio escribir."""
+    if not isinstance(scorecard, dict):
+        return []
+    nombres = [scorecard.get("modelo")]
+    nombres += [b.get("modelo") for b in scorecard.get("split") or [] if isinstance(b, dict)]
+    nombres += list(scorecard.get("sombra") or [])
+    return [n for n in nombres if isinstance(n, str) and n]
 
 
 def _fecha_nacimiento(valor: date | str | None, hoy: date) -> date | None:
