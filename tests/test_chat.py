@@ -40,3 +40,37 @@ def test_responder_incluye_el_historial_y_la_pregunta(evaluacion):
     assert "analista: ¿Qué tasa tiene?" in prompt and "agente: BADLAR más spread." in prompt
     assert prompt.rstrip().endswith("Respondé la pregunta en pocas frases, con los datos de la evaluación.")
     assert "¿Por qué se aprobó?" in prompt
+
+
+# --- agente de cartera -------------------------------------------------------
+
+
+def test_el_agente_de_cartera_recibe_el_monitoreo_calculado():
+    from datetime import date, datetime
+
+    from relevo.cartera import Desembolso, EstadoMensual, RegistroCartera
+    from relevo.chat import responder_cartera
+    from relevo.monitoreo import calcular
+    from relevo.repositorio import Otorgada
+
+    otorgadas = [Otorgada(f"s{i}", "pyme", datetime(2026, 1, 5), "pyme.v3", "C", 0.06) for i in range(40)]
+    registros = [
+        RegistroCartera(
+            f"s{i}",
+            True,
+            Desembolso(date(2026, 1, 10), 1000.0, 12, 60.0),
+            tuple(EstadoMensual(date(2026, m, 1), 900.0, 100.0, 90 if i < 8 and m == 5 else 0) for m in range(2, 8)),
+        )
+        for i in range(40)
+    ]
+    cliente = ClaudeFalso("El rating C defaultea más de lo esperado.")
+
+    respuesta = responder_cartera(
+        calcular(otorgadas, registros), [Turno("analista", "¿Cómo viene?")], "¿Y el C?", cliente
+    )
+
+    assert respuesta == "El rating C defaultea más de lo esperado."
+    pedido = cliente.pedidos[0]
+    assert '"default_observado":8' in pedido["prompt"] and '"estado":"rojo"' in pedido["prompt"]
+    assert "analista: ¿Cómo viene?" in pedido["prompt"] and "¿Y el C?" in pedido["prompt"]
+    assert "no hacés cuentas nuevas" in pedido["sistema"] and pedido["archivos"] == []

@@ -24,7 +24,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/uvicorn relevo.app:crear_app --factory --reload
 ```
 
-Abrir http://localhost:8000. La base queda en `data/relevo.sqlite` (cambiarla con `RELEVO_DB`). Al arrancar se cargan los casos de `config/casos_precargados.yaml` y, si existe, de `data/casos_precargados.local.yaml` (casos con CUIL de personas, fuera de git); se evalúan con **Evaluar pendientes**.
+Abrir http://localhost:8000. La base queda en `data/relevo.sqlite` (cambiarla con `RELEVO_DB`) y la cartera se lee de `data/cartera/` (cambiarla con `RELEVO_CARTERA`). Al arrancar se cargan los casos de `config/casos_precargados.yaml` y, si existe, de `data/casos_precargados.local.yaml` (casos con CUIL de personas, fuera de git), salvo en la base de demo; se evalúan con **Evaluar pendientes**.
 
 ## API del motor
 
@@ -49,7 +49,7 @@ Las solicitudes de la API aparecen en el Histórico como las demás. **No tiene 
 
 ## Agentes
 
-Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo y responden preguntas en la pantalla del caso. Nunca deciden: si fallan, el veredicto sale igual.
+Los agentes leen los documentos subidos en el alta, redactan el informe de riesgo, responden preguntas en la pantalla del caso y sobre la cartera en **Monitoreo**. Nunca deciden: si fallan, el veredicto sale igual.
 
 Por defecto usan `claude -p` (Claude Code con tu suscripción; hace falta haber iniciado sesión con `claude`). Para usar la API de Anthropic:
 
@@ -139,6 +139,16 @@ La conversión, el desembolso, los pagos y la mora son de la entidad (ADR 0008).
 
 Escribe tres CSV en `data/cartera/` (`conversiones`, `desembolsos`, `estados`), que se leen con `CarteraEnArchivos`, el mismo adapter que usaría una entidad que entrega archivos.
 
+## Monitoreo
+
+La pestaña **Monitoreo** cruza las solicitudes otorgadas con la cartera (`RELEVO_CARTERA`) y compara el default observado con la PD del scorecard, por rating, cohorte de desembolso, segmento y versión de reglas (`relevo/monitoreo.py`):
+
+- **O/E**: defaults observados (90+ días en los primeros 12 meses) sobre esperados. Como casi ningún crédito tiene 12 meses, cada uno aporta su PD llevada a los meses observados con hazard constante, `1 − (1 − PD)^(m/12)`. Los créditos con menos de 3 meses no entran.
+- **Estado**: *desvío* si O/E > 1,2 y *subestima* si O/E > 1,5, solo cuando el piso del intervalo de Poisson al 95% supera 1; con menos de 30 créditos, *pocos datos*.
+- **Mora temprana**: 30+ días en los primeros 3 meses. Alerta si alguna de las 3 últimas cohortes de un rating la tiene 1,5 veces mayor que las anteriores (test de dos proporciones).
+
+Los números se calculan sin agente. El chat de la pantalla se los pasa al agente de cartera, que los explica pero no hace cuentas; la conversación no se guarda.
+
 ## Demo con datos reales
 
 Una base aparte con solicitantes y mora reales de la Central de Deudores (ADR 0009). Necesita el extra `demo` y un perfil de AWS con lectura del bucket `data-cendeu-raw`:
@@ -146,7 +156,7 @@ Una base aparte con solicitantes y mora reales de la Central de Deudores (ADR 00
 ```bash
 .venv/bin/pip install -e '.[dev,demo]'
 .venv/bin/python -m relevo.demo_real --perfil fmargara
-RELEVO_DB=data/demo.sqlite .venv/bin/uvicorn relevo.app:crear_app --factory
+RELEVO_DB=data/demo.sqlite RELEVO_CARTERA=data/demo/cartera .venv/bin/uvicorn relevo.app:crear_app --factory
 ```
 
-Deja la base en `data/demo.sqlite` y la cartera en `data/demo/cartera/`. Los CUIT son reales: nada de eso va a git ni al bucket compartido.
+Deja la base en `data/demo.sqlite` y la cartera en `data/demo/cartera/`. La app no carga los casos precargados en esta base: solo lleva CUIT reservados. Los CUIT son reales: nada de eso va a git ni al bucket compartido.

@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS evaluaciones (
     fuentes_no_consultadas TEXT NOT NULL,
     denominacion TEXT
 );
+-- la última evaluación de cada solicitud (histórico, monitoreo)
+CREATE INDEX IF NOT EXISTS evaluaciones_por_solicitud ON evaluaciones (solicitud_id, id);
 
 CREATE TABLE IF NOT EXISTS snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +156,19 @@ class FilaBandeja:
     rating: str | None
     evaluada_en: datetime | None
     denominacion: str | None
+
+
+@dataclass(frozen=True)
+class Otorgada:
+    """Una solicitud cuya última evaluación terminó en un crédito ofrecido, con lo que el monitoreo
+    compara contra la cartera."""
+
+    solicitud_id: str
+    segmento: str
+    evaluada_en: datetime
+    version_reglas: str
+    rating: str
+    pd: float
 
 
 @dataclass(frozen=True)
@@ -443,6 +458,33 @@ class Repositorio:
             "SELECT id FROM evaluaciones WHERE solicitud_id = ? ORDER BY id DESC", (solicitud_id,)
         ).fetchall()
         return [self.evaluacion(f["id"]) for f in ids]
+
+    def otorgadas(self) -> list[Otorgada]:
+        """Las solicitudes cuya última evaluación ofreció un crédito: aprobadas por el motor, o derivadas
+        y aprobadas por el analista. En una sola consulta, porque el monitoreo las lee todas."""
+        filas = self._ejecutar(
+            """
+            SELECT s.id, s.segmento, e.creada_en, e.version_reglas, e.rating, e.pd
+            FROM solicitudes s
+            JOIN evaluaciones e ON e.id = (SELECT MAX(id) FROM evaluaciones WHERE solicitud_id = s.id)
+            WHERE e.oferta IS NOT NULL AND e.oferta != 'null' AND e.pd IS NOT NULL AND e.rating IS NOT NULL
+              AND (e.veredicto = 'APROBADO' OR (e.veredicto = 'DERIVAR' AND (
+                  SELECT decision FROM resoluciones WHERE evaluacion_id = e.id ORDER BY id DESC LIMIT 1
+              ) = 'aprobar'))
+            ORDER BY s.id
+            """
+        ).fetchall()
+        return [
+            Otorgada(
+                f["id"],
+                f["segmento"],
+                datetime.fromisoformat(f["creada_en"]),
+                f["version_reglas"],
+                f["rating"],
+                f["pd"],
+            )
+            for f in filas
+        ]
 
     def ultima_evaluacion(self, solicitud_id: str) -> EvaluacionGuardada | None:
         sql = "SELECT MAX(id) AS id FROM evaluaciones WHERE solicitud_id = ?"

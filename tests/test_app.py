@@ -1,4 +1,4 @@
-"""App web: Histórico, Nueva solicitud, Caso y Backoffice, con fuentes y agente falsos."""
+"""App web: Histórico, Nueva solicitud, Caso, Monitoreo y Backoffice, con fuentes y agente falsos."""
 
 import json
 import re
@@ -62,6 +62,7 @@ def test_las_pestanas_separan_alta_historico_y_backoffice(cliente):
     assert 'name="q"' in historico and 'name="cuit"' not in historico
     for pagina in (historico, nueva, http.get("/reglas").text):
         assert ">Nueva solicitud</a>" in pagina and ">Histórico</a>" in pagina and ">Backoffice</a>" in pagina
+        assert ">Monitoreo</a>" in pagina
         assert ">Reglas</a>" not in pagina
     assert 'class="activo">Backoffice' in http.get("/reglas").text
 
@@ -419,3 +420,68 @@ def test_desde_la_app_se_actualiza_la_base_del_borrador_y_se_vuelve_a_una_versio
     assert respuesta.status_code == 303
     assert servicio.versiones.borrador("pyme").base == 3
     assert "Cargar esta versión en el borrador" in app.get("/reglas/pyme/historial").text
+
+
+# --- monitoreo -----------------------------------------------------------------
+
+
+def _con_cartera(http, servicio, defaults: int):
+    """30 solicitudes otorgadas con 6 meses de cartera; las primeras ``defaults`` llegan a 90 días."""
+    from datetime import date
+
+    from relevo.cartera import CarteraEnMemoria, Desembolso, EstadoMensual, RegistroCartera
+
+    ids = [alta(http).headers["location"].rsplit("/", 1)[1] for _ in range(30)]
+    servicio.cartera = CarteraEnMemoria(
+        RegistroCartera(
+            id,
+            True,
+            Desembolso(date(2026, 1, 10), 1000.0, 12, 60.0),
+            tuple(
+                EstadoMensual(date(2026, m, 1), 900.0, 100.0, 90 if i < defaults and m == 6 else 0) for m in range(2, 8)
+            ),
+        )
+        for i, id in enumerate(ids)
+    )
+
+
+def test_monitoreo_sin_cartera_avisa(cliente):
+    respuesta = cliente()[0].get("/monitoreo")
+
+    assert respuesta.status_code == 200
+    assert "No se pudo leer la cartera: no hay cartera configurada" in respuesta.text
+    assert 'class="activo">Monitoreo' in respuesta.text
+
+
+def test_monitoreo_muestra_el_desvio_y_la_alerta(cliente):
+    http, servicio = cliente()
+    _con_cartera(http, servicio, defaults=10)
+
+    pagina = http.get("/monitoreo").text
+
+    assert "Por rating" in pagina and "Por cohorte de desembolso" in pagina and "2026-01" in pagina
+    assert "El scorecard subestima el riesgo" in pagina and "subestima</span>" in pagina
+
+
+def test_preguntas_al_agente_de_cartera(cliente):
+    agente = ClaudeFalso("El rating A está subestimado.")
+    http, servicio = cliente(agente=agente)
+    _con_cartera(http, servicio, defaults=10)
+
+    historial = [{"rol": "analista", "texto": "Hola"}, {"rol": "agente", "texto": "Hola."}, {"rol": "x", "texto": "no"}]
+    respuesta = http.post("/monitoreo/preguntar", json={"pregunta": "¿Qué rating anda mal?", "historial": historial})
+
+    assert respuesta.json() == {"respuesta": "El rating A está subestimado."}
+    prompt = agente.pedidos[0]["prompt"]
+    assert "analista: Hola\nagente: Hola." in prompt and "x: no" not in prompt
+    assert '"default_observado":10' in prompt
+    assert http.post("/monitoreo/preguntar", json={"pregunta": "  "}).status_code == 400
+
+
+def test_preguntas_de_cartera_sin_agente(cliente):
+    http, servicio = cliente()
+    _con_cartera(http, servicio, defaults=0)
+
+    respuesta = http.post("/monitoreo/preguntar", json={"pregunta": "¿Cómo viene?"})
+
+    assert respuesta.status_code == 503 and "no hay agente configurado" in respuesta.json()["error"]

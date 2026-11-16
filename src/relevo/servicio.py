@@ -3,7 +3,8 @@
 Arma la solicitud, llama a ``evaluar`` con un ``ConsultorReal`` cuyo almacén de
 snapshots es el repositorio, y guarda el resultado. Los documentos subidos pasan por el
 agente documental antes de evaluar; el informe y el chat se piden aparte y nunca tocan
-el veredicto.
+el veredicto. El monitoreo cruza las evaluaciones otorgadas con la cartera de la entidad
+(``FuenteDeCartera``), que se lee en cada consulta.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ from typing import Any
 import httpx
 import yaml
 
-from relevo import chat, identificacion, lectura_documentos
+from relevo import chat, identificacion, lectura_documentos, monitoreo
+from relevo.cartera import CarteraInvalida, FuenteDeCartera
 from relevo.catalogo import flujo_de_originacion
 from relevo.clientes_claude import ClienteClaude, SinAgente
 from relevo.consultor_real import ConfigFuente, ConsultorReal, adapters_por_defecto, cargar_config_fuentes
@@ -64,6 +66,7 @@ class Servicio:
         directorio_reglas: Path = DIRECTORIO_REGLAS,
         cliente_claude: ClienteClaude | None = None,
         directorio_documentos: Path = DOCUMENTOS,
+        cartera: FuenteDeCartera | None = None,
     ):
         self.repositorio = repositorio
         self.adapters = adapters or self._adapters_reales
@@ -76,6 +79,7 @@ class Servicio:
         self.versiones.importar(directorio_reglas)
         self.cliente_claude = cliente_claude or SinAgente()
         self.directorio_documentos = directorio_documentos
+        self.cartera = cartera
         self._cliente: httpx.Client | None = None
         self._lock = threading.Lock()
 
@@ -203,6 +207,23 @@ class Servicio:
         self.repositorio.agregar_mensaje(evaluacion_id, "analista", pregunta)
         self.repositorio.agregar_mensaje(evaluacion_id, "agente", respuesta)
         return respuesta
+
+    # --- monitoreo de cartera (chat) ---------------------------------------
+
+    def monitoreo(self) -> monitoreo.Informe:
+        """PD esperada contra default observado. Lanza ``CarteraInvalida`` si no hay cartera o no se puede leer."""
+        if self.cartera is None:
+            raise CarteraInvalida("no hay cartera configurada")
+        return monitoreo.calcular(self.repositorio.otorgadas(), self.cartera.registros())
+
+    def preguntar_cartera(self, historial: Sequence[tuple[str, str]], pregunta: str) -> str:
+        """Responde una pregunta sobre el monitoreo. ``historial`` son pares (rol, texto): la
+        conversación no se guarda, vive en la pantalla."""
+        pregunta = pregunta.strip()
+        if not pregunta:
+            raise SolicitudInvalida("la pregunta está vacía")
+        turnos = [chat.Turno(rol, texto) for rol, texto in historial]
+        return chat.responder_cartera(self.monitoreo(), turnos, pregunta, self.cliente_claude)
 
     def evaluar(self, solicitud_id: str) -> int:
         guardada = self.repositorio.solicitud(solicitud_id)

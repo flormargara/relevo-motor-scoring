@@ -18,6 +18,7 @@
       "runtimeExecutable": "env",
       "runtimeArgs": [
         "RELEVO_DB=data/demo.sqlite",
+        "RELEVO_CARTERA=data/demo/cartera",
         ".venv/bin/uvicorn",
         "relevo.app:crear_app",
         "--factory",
