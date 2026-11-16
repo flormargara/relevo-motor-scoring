@@ -31,7 +31,6 @@ Requiere el extra ``demo`` (duckdb) y credenciales de AWS con lectura del bucket
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import random
@@ -58,10 +57,10 @@ from relevo.fuentes.igj import SNAPSHOT_POR_DEFECTO as SNAPSHOT_IGJ
 from relevo.fuentes.igj import Igj
 from relevo.fuentes.juguete import Bureau, Propios
 from relevo.repositorio import Repositorio
+from relevo.reservados import PORCENTAJE_RESERVADO, es_reservado, sql_reservado  # noqa: F401 (se reexportan)
 from relevo.servicio import Servicio
 from relevo.sintetico_cartera import generar, otorgadas
 
-PORCENTAJE_RESERVADO = 5
 BUCKET = "s3://data-cendeu-raw"
 PERIODO_CORTE = 202609  # último período del bucket; en deudores/ está incompleto, sale de deudores_mensual/
 CORTE_PADRON = 20261030
@@ -73,19 +72,6 @@ SEMILLA = 2026
 DIAS_POR_SITUACION = {1: 0, 2: 60, 3: 120, 4: 270, 5: 365, 6: 365}
 PREFIJOS = {"pyme": ("30", "33", "34"), "monotributista": ("20", "23", "24", "27")}
 INGRESO_POR_CATEGORIA = dict(zip("ABCDEFGHIJK", (8, 12, 17, 21, 26, 32, 38, 58, 65, 75, 90), strict=True))  # millones
-
-
-# --- CUIT reservados ----------------------------------------------------------
-
-
-def es_reservado(cuit: str | int) -> bool:
-    """El CUIT queda para la demo y fuera del entrenamiento del modelo de ML."""
-    return int(hashlib.md5(str(int(cuit)).encode()).hexdigest()[:8], 16) % 100 < PORCENTAJE_RESERVADO
-
-
-def sql_reservado(columna: str = "cuit") -> str:
-    """La misma regla en SQL (duckdb), para excluir los reservados al entrenar."""
-    return f"('0x' || left(md5(CAST({columna} AS VARCHAR)), 8))::UBIGINT % 100 < {PORCENTAJE_RESERVADO}"
 
 
 # --- central → formato de la API del BCRA --------------------------------------

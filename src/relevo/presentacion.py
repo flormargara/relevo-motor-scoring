@@ -300,6 +300,11 @@ def _estado(clave: str, pasos: list[Paso], evaluacion: Evaluacion) -> tuple[str,
             if saltan or problemas:
                 return "alerta", f"deriva ({saltan + problemas})"
             return "ok", "ninguna salta"
+        case "scorecard" if any("@" in p.regla for p in pasos):  # modelo de ML externo (ADR 0010)
+            paso = pasos[-1]
+            if paso.resultado != "ok":
+                return "corta", f"{paso.regla}: {paso.resultado}"
+            return "ok", f"modelo de ML {paso.regla} · PD {porcentaje(paso.detalle.get('valor'))}"
         case "scorecard":
             total = sum(float(p.detalle.get("puntos") or 0) for p in pasos)
             faltan = problemas + sin_dato

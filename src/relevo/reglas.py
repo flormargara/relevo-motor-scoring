@@ -71,14 +71,32 @@ class Caracteristica:
 
 
 @dataclass(frozen=True)
-class Scorecard:
+class ModeloExterno:
+    """Un modelo de ML que vive en otro repositorio y se consulta como fuente (ADR 0010)."""
+
     modelo: str
+    version: str
+
+    @property
+    def id(self) -> str:
+        return f"{self.modelo}@{self.version}"
+
+
+PD_EXTERNA = Expresion("modelo_ml.pd")
+
+
+@dataclass(frozen=True)
+class Scorecard:
+    """El modelo que da la PD: un scorecard de puntos, o un modelo de ML externo (``externo``)."""
+
+    modelo: str  # archivo del descriptor en modelos/
     provisional: bool
     puntos_base: float
     odds_base: float
     pdo: float
     caracteristicas: tuple[Caracteristica, ...]
     si_no_disponible: str = "continuar"
+    externo: ModeloExterno | None = None
 
     def pd(self, puntos: float) -> float:
         """Escala estándar: odds (buenos/malos) se duplican cada `pdo` puntos."""
@@ -134,6 +152,7 @@ class Reglas:
             *(r.condicion for r in self.killers),
             *(r.condicion for r in self.derivaciones),
             *(c.expresion for c in self.scorecard.caracteristicas),
+            *((PD_EXTERNA,) if self.scorecard.externo else ()),
             self.politica.tasa_base,
             self.politica.capacidad_pago.variable,
         ]
@@ -315,6 +334,8 @@ def _scorecard(datos: dict, directorio_modelos: Path) -> tuple[Scorecard, tuple[
         raise ReglasInvalidas(f"scorecard: no existe el modelo {archivo}")
     try:
         modelo = _Lector(json.loads(archivo.read_text(encoding="utf-8")), f"modelo {nombre_modelo}")
+        if modelo.datos.get("tipo") == "externo":
+            return _modelo_externo(d, modelo, nombre_modelo)
         escala = modelo.sub("escala")
         caracteristicas = tuple(
             _caracteristica(item, f"modelo {nombre_modelo}: caracteristicas[{i}]")
@@ -335,6 +356,30 @@ def _scorecard(datos: dict, directorio_modelos: Path) -> tuple[Scorecard, tuple[
         return scorecard, ratings
     except json.JSONDecodeError as error:
         raise ReglasInvalidas(f"modelo {nombre_modelo}: JSON inválido: {error}") from None
+
+
+def _modelo_externo(d: _Lector, modelo: _Lector, nombre: str) -> tuple[Scorecard, tuple[Rating, ...]]:
+    """Un modelo de ML externo: da la PD por la fuente ``modelo_ml``. Sin PD no hay rating, así
+    que si el modelo no responde la evaluación se deriva o se rechaza: seguir no es una opción."""
+    si_no_disponible = d.accion("si_no_disponible", "derivar")
+    if si_no_disponible == "continuar":
+        raise ReglasInvalidas(
+            f"scorecard: con un modelo externo ({nombre}) si_no_disponible tiene que ser derivar o rechazar"
+        )
+    externo = ModeloExterno(modelo=modelo.texto("modelo"), version=str(modelo.datos.get("version", "")))
+    if not externo.version:
+        raise ReglasInvalidas(f"modelo {nombre}: falta la versión")
+    scorecard = Scorecard(
+        modelo=nombre,
+        provisional=bool(modelo.datos.get("provisional", False)),
+        puntos_base=0,
+        odds_base=1,
+        pdo=1,
+        caracteristicas=(),
+        si_no_disponible=si_no_disponible,
+        externo=externo,
+    )
+    return scorecard, _ratings(modelo.lista("ratings"), f"modelo {nombre}")
 
 
 def _caracteristica(item: Any, donde: str) -> Caracteristica:

@@ -24,10 +24,13 @@ from relevo.fuentes.documentos import VARIABLES_POR_SEGMENTO, Documentos
 from relevo.fuentes.identidad import IdentidadDeclarada
 from relevo.fuentes.igj import Igj
 from relevo.fuentes.juguete import Bureau, Propios
+from relevo.fuentes.modelo_ml import ModeloML
 
 ARCHIVO_FLUJOS = Path(__file__).resolve().parents[2] / "config" / "flujos.yaml"
 
-_FUENTES = {f.nombre: f for f in (Cendeu, Cheques, Badlar, Igj, Arca, Bureau, Propios, IdentidadDeclarada, Documentos)}
+_FUENTES = {
+    f.nombre: f for f in (Cendeu, Cheques, Badlar, Igj, Arca, Bureau, Propios, IdentidadDeclarada, Documentos, ModeloML)
+}
 
 VARIABLES_SOLICITUD = {
     "cuit": Variable("texto", "CUIT/CUIL del solicitante"),

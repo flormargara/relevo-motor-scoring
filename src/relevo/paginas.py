@@ -294,6 +294,7 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
             "borrador": (borrador.contenido | {"ratings": ratings}) if borrador else None,
             "base_borrador": borrador.base if borrador else None,
             "metricas": metricas,
+            "modelos": servicio.modelos_disponibles(definicion.segmento),
             "catalogo": [
                 {"nombre": v.nombre, "tipo": v.tipo, "descripcion": v.descripcion, "fuente": v.fuente}
                 for v in catalogo(flujo)
@@ -308,6 +309,7 @@ def crear_paginas(servicio: Servicio) -> APIRouter:
             metricas=metricas,
             borrador=borrador,
             datos=datos,
+            avisos_modelo=servicio.avisos_modelo(flujo),
         )
 
     @router.get("/reglas/{flujo}/historial", response_class=HTMLResponse)

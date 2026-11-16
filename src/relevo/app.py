@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from relevo.api import crear_api
 from relevo.cartera import CarteraEnArchivos
 from relevo.clientes_claude import cliente_desde_entorno
+from relevo.fuentes.modelo_ml import ConexionModelo
 from relevo.paginas import crear_paginas
 from relevo.repositorio import Repositorio
 from relevo.servicio import RAIZ, Servicio
@@ -24,7 +25,10 @@ def crear_app(servicio: Servicio | None = None) -> FastAPI:
     if servicio is None:
         repositorio = Repositorio(os.environ.get("RELEVO_DB", RAIZ / "data" / "relevo.sqlite"))
         cartera = CarteraEnArchivos(os.environ.get("RELEVO_CARTERA", RAIZ / "data" / "cartera"))
-        servicio = Servicio(repositorio, cliente_claude=cliente_desde_entorno(), cartera=cartera)
+        modelo = ConexionModelo(os.environ.get("RELEVO_MODELO_URL"), os.environ.get("RELEVO_MODELO_TOKEN"))
+        servicio = Servicio(
+            repositorio, cliente_claude=cliente_desde_entorno(), cartera=cartera, conexion_modelo=modelo
+        )
         servicio.cargar_precargados()
     app = FastAPI(
         title="Relevo AI — API del motor de decisión de riesgo",

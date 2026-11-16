@@ -18,7 +18,7 @@ from relevo import identificacion
 from relevo.condiciones import Expresion, SinDato
 from relevo.consultor import Consultor, Disponible, NoDisponible, ResultadoFuente, SinAntecedentes
 from relevo.dominio import Evaluacion, Oferta, Paso, Solicitud, Veredicto
-from relevo.reglas import Politica, Regla, Reglas
+from relevo.reglas import PD_EXTERNA, Politica, Regla, Reglas
 
 
 def evaluar(solicitud: Solicitud, reglas: Reglas, consultor: Consultor) -> Evaluacion:
@@ -111,6 +111,8 @@ class _Evaluacion:
 
     def _scorecard(self) -> None:
         scorecard = self.reglas.scorecard
+        if scorecard.externo:
+            return self._modelo_externo()
         total = 0.0
         for caracteristica in scorecard.caracteristicas:
             valores: dict[str, Any] = {}
@@ -152,6 +154,41 @@ class _Evaluacion:
             modelo=scorecard.modelo,
             provisional=scorecard.provisional,
         )
+
+    def _modelo_externo(self) -> None:
+        """La PD la da un modelo de ML externo (ADR 0010). Sin PD no hay rating: se deriva o se rechaza."""
+        scorecard = self.reglas.scorecard
+        assert scorecard.externo is not None
+        valores: dict[str, Any] = {}
+        try:
+            pd = float(self._evaluar(PD_EXTERNA, valores))
+            if not 0 <= pd <= 1:
+                raise _NoEvaluable(f"PD fuera de [0, 1]: {pd}")
+        except (SinDato, _NoEvaluable) as error:
+            resultado = "sin dato" if isinstance(error, SinDato) else "no evaluable"
+            self._paso(
+                "scorecard", scorecard.externo.id, resultado, motivo=str(error), accion=scorecard.si_no_disponible
+            )
+            raise _Corte(
+                _ACCION_A_VEREDICTO[scorecard.si_no_disponible],
+                f"scorecard {scorecard.externo.id}: sin PD del modelo ({error})",
+            ) from None
+        self._paso("scorecard", scorecard.externo.id, "ok", valor=pd, factores=self._factores())
+        self.pd = pd
+        self.rating = self.reglas.rating_para(pd)
+        self._paso(
+            "rating",
+            "rating",
+            self.rating,
+            pd=pd,
+            modelo=scorecard.modelo,
+            externo=scorecard.externo.id,
+            provisional=scorecard.provisional,
+        )
+
+    def _factores(self) -> list[Any]:
+        resultado = self.resultados.get("modelo_ml")
+        return list(resultado.variables.get("factores") or []) if isinstance(resultado, Disponible) else []
 
     def _politica(self) -> Oferta:
         politica = self.reglas.politica
