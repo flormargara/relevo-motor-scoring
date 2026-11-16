@@ -8,16 +8,18 @@ Vocabulario de diseño: *module*, *interface*, *seam*, *adapter* y *depth*, seg�
             app (FastAPI + páginas)
              │        │          │
              ▼        ▼          ▼
-         ┌───────┐ ┌────────┐ ┌──────────────┐
-         │ motor │ │agentes │ │ repositorio  │
-         └───┬───┘ └───┬────┘ └──────────────┘
-             │         │
-   seam ─────┼─────    seam ───────────
+         ┌───────┐ ┌──────────────────────────┐ ┌──────────────┐
+         │ motor │ │ lectura_documentos │ chat │ │ repositorio  │
+         └───┬───┘ └─────────┬───────────┬────┘ └──────────────┘
+             │               │           │
+   seam ─────┼─────    seam ─┴───────────┴──
    Consultor │         ClienteClaude
-             ▼         ▼
+             ▼               ▼
    fuentes/*          claude -p | API Anthropic
    (CENDEU, BADLAR, IGJ, ARCA, bureau, identidad, propios, documentos, fake)
 ```
+
+`lectura_documentos` y `chat` son productos que se van a vender por separado (ADR 0008). Viven acá hasta que se desarrollen, con fronteras que controla `tests/test_fronteras.py`.
 
 ## 1. `motor`: el módulo profundo
 
@@ -82,14 +84,22 @@ Las reglas referencian el modelo del scorecard (`modelos/<segmento>.v<N>.json`, 
 
 Las condiciones de un flujo solo pueden usar variables de su **catálogo**: las de la solicitud más las que declara cada fuente que el flujo consulta (cada adapter declara `variables`, con un test de contrato contra lo que devuelve).
 
-## 4. `agentes`
+## 4. Agentes: `lectura_documentos` y `chat`
 
 ```python
+# lectura_documentos: no sabe nada del motor
 extraer_documento(archivo: Path, cliente: ClienteClaude) -> DocumentoExtraido
+documento_manual(campos: Mapping) -> DocumentoExtraido | None
+
+# fuentes.documentos: la traducción del lado del motor
 variables_documentos(documentos, segmento, cuit, hoy) -> dict | None
+
+# chat: lee la evaluación, nunca escribe en el motor
 redactar_informe(evaluacion: Evaluacion, cliente: ClienteClaude) -> str
 responder(evaluacion: Evaluacion, historial: list[Turno], pregunta: str, cliente: ClienteClaude) -> str
 ```
+
+Fronteras: `lectura_documentos` solo importa `clientes_claude`; a `chat` solo lo importan `servicio` y `app`. Qué variables de documentos usa cada segmento (`VARIABLES_POR_SEGMENTO`) es conocimiento del motor y vive en `fuentes.documentos`.
 
 **Seam `ClienteClaude`:** `completar(prompt: str, archivos: Sequence[Path] = (), sistema: str | None = None) -> str`. Tiene cuatro adapters: `ClaudeCLI` (`claude -p`, el default según el ADR 0004), `ClaudeAPI`, `SinAgente` (no configurado) y `ClaudeFalso` para los tests. Toda falla es `AgenteNoDisponible`.
 
